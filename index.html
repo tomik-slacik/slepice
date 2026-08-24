@@ -266,8 +266,35 @@
   function freshHen(id, henName, farm, dailyAmount, address){
     return {
       id: id, henName: henName, farm: farm, dailyAmount: dailyAmount, address: address,
-      paused: false, feedLog: {}, deliveries: [], pausedDates: {}, bestStreak: 0
+      paused: false, feedLog: {}, deliveries: [], pausedDates: {}, bestStreak: 0,
+      // high-water mark of dailyAmount, same idea as bestStreak - an
+      // accessory unlocked by reaching a higher daily amount once stays
+      // unlocked even if the amount is later turned back down
+      bestDailyAmount: dailyAmount
     };
+  }
+
+  // ============ hen accessories - a little extra reason to raise the daily
+  // amount beyond "more eggs": each tier dresses the hen up a bit more.
+  // Cumulative and permanent (based on bestDailyAmount, never taken away).
+  // tiers sit above DEFAULT_DAILY_AMOUNT (20) on purpose - a fresh hen never
+  // starts with an accessory already unlocked, so there's always a real "pay
+  // a bit more and get something for it" moment. +5 -> glasses, +10 -> hat,
+  // max (+20) -> a bonus one for going all the way.
+  var ACCESSORY_TIERS = [
+    {id:'glasses', min:25, label:'brýle',  unlock: function(n){ return n+' dostala brýle! Teď vypadá mnohem chytřeji.'; }},
+    {id:'hat',     min:30, label:'čepici', unlock: function(n){ return n+' dostala čepici — bude ji hřát i v zimě.'; }},
+    {id:'scarf',   min:40, label:'šátek',  unlock: function(n){ return n+' dostala parádní šátek. Teď je nastrojená naplno!'; }}
+  ];
+  function henAccessories(hen){
+    var mark = hen.bestDailyAmount || hen.dailyAmount;
+    return ACCESSORY_TIERS.filter(function(t){ return mark >= t.min; }).map(function(t){ return t.id; });
+  }
+  function nextAccessoryHint(hen){
+    var mark = hen.bestDailyAmount || hen.dailyAmount;
+    var next = ACCESSORY_TIERS.filter(function(t){ return mark < t.min; })[0];
+    if(!next) return '';
+    return 'Dalších '+(next.min-mark)+' Kč denně a '+hen.henName+' dostane '+next.label+'.';
   }
 
   var defaults = {
@@ -585,15 +612,35 @@
     sliders: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="var(--surface)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="9" cy="12" r="2" fill="var(--surface)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="var(--surface)"/></svg>'
   };
 
+  // accessory pieces - drawn in the same head-local coordinates as the rest
+  // of henSvg below, so they sit right and tilt along with a sad hen's
+  // drooped head instead of floating separately.
+  var ACCESSORY_SVG = {
+    glasses:
+      '<circle cx="164" cy="60" r="9" fill="none" style="stroke:var(--ink);stroke-width:2.2"/>'+
+      '<path d="M173,59 Q182,55 187,58" fill="none" style="stroke:var(--ink);stroke-width:2.2" stroke-linecap="round"/>'+
+      '<path d="M155,57 Q144,51 136,55" fill="none" style="stroke:var(--ink);stroke-width:2.2" stroke-linecap="round"/>',
+    hat:
+      '<path d="M133,33 Q133,11 158,11 Q183,11 183,33 Z" style="fill:var(--sage)"/>'+
+      '<ellipse cx="158" cy="33" rx="27" ry="5" style="fill:var(--sage)"/>'+
+      '<circle cx="158" cy="13" r="3.4" style="fill:var(--surface)"/>',
+    scarf:
+      '<path d="M137,86 Q158,101 179,84" fill="none" style="stroke:var(--yolk);stroke-width:9" stroke-linecap="round"/>'+
+      '<polygon points="149,94 157,109 164,92" style="fill:var(--yolk)"/>'
+  };
+
   // hen illustration - sad=true droops the head, dims the comb/wattle and
   // closes the eye. Same silhouette either way so it still reads as "the
-  // same hen", just having a bad day (tied to hen.paused).
-  function henSvg(sad){
+  // same hen", just having a bad day (tied to hen.paused). accessories is
+  // an array of ACCESSORY_SVG keys (see henAccessories()) - purely additive,
+  // drawn on top, so a bare hen looks exactly as before.
+  function henSvg(sad, accessories){
     var eye = sad
       ? '<path d="M160.5,61 Q165,65.5 169.5,61" style="stroke:var(--ink);stroke-width:2.2" fill="none" stroke-linecap="round"/>'
       : '<circle cx="165" cy="60" r="3.5" style="fill:var(--ink)"/>';
     var combOpacity = sad ? '.45' : '1';
     var headTransform = sad ? ' transform="rotate(14 140 88)"' : '';
+    var extras = (accessories||[]).map(function(id){ return ACCESSORY_SVG[id] || ''; }).join('');
     return '<svg viewBox="0 0 220 190" width="150" height="130" role="img" aria-label="'+(sad?'Ilustrace smutné slepičky':'Ilustrace slepičky')+'">'+
       '<ellipse cx="95" cy="168" rx="70" ry="9" style="fill:var(--line);opacity:.5"/>'+
       '<path d="M50,92 C22,76 14,44 34,18 C42,52 54,74 66,96 Z" style="fill:var(--ink-soft);opacity:.5"/>'+
@@ -608,6 +655,7 @@
         '<ellipse cx="171" cy="83" rx="5" ry="8" style="fill:var(--accent);opacity:'+combOpacity+'"/>'+
         '<polygon points="183,61 199,68 183,76" style="fill:var(--yolk)"/>'+
         eye+
+        extras+
       '</g></svg>';
   }
 
@@ -771,7 +819,7 @@
       henSwitcherHtml()+
       '<div class="topbar"><div><div class="app-eyebrow">'+greeting()+'</div><div class="app-h1" style="font-size:23px;margin-top:2px;">Ahoj</div></div>'+
         '<div class="avatar">'+ICO.egg+'</div></div>'+
-      '<div class="card hen-card">'+henSvg(hen.paused)+'<div class="hen-name">'+escapeHtml(hen.henName)+(hen.paused?'<span class="status-chip">POZASTAVENO</span>':'')+'</div>'+
+      '<div class="card hen-card">'+henSvg(hen.paused, henAccessories(hen))+'<div class="hen-name">'+escapeHtml(hen.henName)+(hen.paused?'<span class="status-chip">POZASTAVENO</span>':'')+'</div>'+
         '<div class="hen-meta">'+escapeHtml(farmName(hen.farm))+'</div></div>'+
       '<div><div class="field-label">Tento týden</div><div class="day-row">'+dayChips+'</div></div>'+
       '<div class="reveal-panel"><div class="reveal-top"><span>'+selDayObj.label+' '+fmtDateHuman(selDayObj.key)+'</span><span>'+amountLbl+'</span></div>'+
@@ -872,7 +920,9 @@
         '<div class="stepper-row"><div class="round-btn pressable" data-action="amount-minus">'+ICO.minus+'</div>'+
           '<div class="stepper-num">'+hen.dailyAmount+' Kč</div>'+
           '<div class="round-btn pressable" data-action="amount-plus">'+ICO.plus+'</div></div>'+
-        '<div class="center-mono" style="margin-top:9px;">týdně '+weekly+' Kč · přibližně '+eggs+' vajec</div></div>'+
+        '<div class="center-mono" style="margin-top:9px;">týdně '+weekly+' Kč · přibližně '+eggs+' vajec</div>'+
+        (nextAccessoryHint(hen) ? '<div class="hint mono" style="margin-top:8px;text-align:center;color:var(--accent-text);">'+escapeHtml(nextAccessoryHint(hen))+'</div>' : '')+
+      '</div>'+
       '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;">'+
           '<div><div class="field-label">Pauza</div><div style="font-size:12.5px;margin-top:6px;">'+(hen.paused?'Pozastaveno — dokud znovu nezapneš.':'Aktivní.')+'</div></div>'+
           '<div class="switch-track pressable" data-action="toggle-pause" data-on="'+(!hen.paused)+'"><div class="switch-knob"></div></div></div>'+
@@ -972,7 +1022,15 @@
     }
     else if(action==='add-hen'){ startOnboarding('add'); }
     else if(action==='amount-minus'){ var h1=activeHen(); h1.dailyAmount = Math.max(10, h1.dailyAmount-5); saveState(); renderSettings(); }
-    else if(action==='amount-plus'){ var h2=activeHen(); h2.dailyAmount = Math.min(40, h2.dailyAmount+5); saveState(); renderSettings(); }
+    else if(action==='amount-plus'){
+      var h2=activeHen();
+      h2.dailyAmount = Math.min(40, h2.dailyAmount+5);
+      var before = h2.bestDailyAmount || h2.dailyAmount;
+      h2.bestDailyAmount = Math.max(before, h2.dailyAmount);
+      var justUnlocked = ACCESSORY_TIERS.filter(function(t){ return before < t.min && h2.bestDailyAmount >= t.min; });
+      saveState(); renderSettings();
+      if(justUnlocked.length) showToasts(justUnlocked.map(function(t){ return {tag:'NOVINKA', body: t.unlock(h2.henName)}; }));
+    }
     else if(action==='toggle-pause'){ var h3=activeHen(); h3.paused = !h3.paused; saveState(); renderSettings(); }
     else if(action==='advance-day'){ state.dayOffset += 1; selDay=null; saveState(); runTick(); renderAll(); }
     else if(action==='reset-app'){
