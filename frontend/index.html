@@ -1,0 +1,700 @@
+<title>Kvoč</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Kvoč">
+<meta name="theme-color" content="#E8DCC3">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rye&family=Bitter:wght@600;700;800&family=Karla:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#E8DCC3; --surface:#F6F0E3; --surface-2:#EFE4CB;
+    --ink:#241B14; --ink-soft:#5B4A38; --line:#CDBB93;
+    --accent:#C4471F; --accent-text:#9A371A; --yolk:#DDA13B;
+    --shadow:#CDBB93; --feather:#A66A3B; --sage:#748253;
+  }
+  *,*::before,*::after{box-sizing:border-box;}
+  html,body{margin:0;padding:0;min-height:100vh;min-height:100dvh;}
+  body{
+    background:var(--bg);color:var(--ink);
+    font-family:'Karla',-apple-system,'Segoe UI',sans-serif;line-height:1.5;
+    -webkit-tap-highlight-color:transparent;
+    overscroll-behavior-y:contain;
+  }
+  img,svg{display:block;max-width:100%;}
+  .mono{font-family:'IBM Plex Mono','SFMono-Regular',Consolas,monospace;}
+  input,button{font:inherit;}
+
+  #shell{
+    max-width:480px;margin:0 auto;min-height:100vh;min-height:100dvh;
+    display:flex;flex-direction:column;background:var(--bg);position:relative;
+  }
+
+  /* ---------- onboarding ---------- */
+  #view-onboarding{flex:1;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top,0px) + 26px) 22px 24px;gap:18px;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;}
+  .icon-btn{color:var(--ink);cursor:pointer;padding:4px;}
+  .app-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-text);}
+  .app-h1{font-family:'Bitter',serif;font-weight:800;font-size:25px;text-wrap:balance;}
+  .app-sub{font-size:13.5px;color:var(--ink-soft);line-height:1.5;}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:4px;box-shadow:2px 2px 0 var(--shadow);padding:16px;}
+  .pressable{cursor:pointer;transition:transform .08s ease;user-select:none;}
+  .pressable:active{transform:translate(1px,1px);}
+
+  .btn-primary{
+    background:var(--accent);color:var(--surface);border-radius:4px;box-shadow:2px 2px 0 var(--shadow);
+    padding:16px;text-align:center;font-family:'Bitter',serif;font-weight:700;font-size:15.5px;
+    display:flex;align-items:center;justify-content:center;gap:8px;border:none;width:100%;
+  }
+  .btn-secondary{
+    background:transparent;color:var(--ink-soft);text-align:center;font-family:'IBM Plex Mono',monospace;
+    font-size:12px;padding:10px;
+  }
+
+  .field-label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px;}
+  .name-input{font-family:'Bitter',serif;font-weight:700;font-size:19px;color:var(--ink);background:transparent;border:none;border-bottom:2px solid var(--line);padding:8px 2px;width:100%;outline:none;}
+  .name-input:focus{border-bottom-color:var(--accent);}
+  .text-input{font-family:'Karla',sans-serif;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:11px 12px;width:100%;outline:none;}
+  .text-input:focus{border-color:var(--accent);}
+
+  .farm-card{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1.5px solid var(--line);border-radius:4px;box-shadow:2px 2px 0 var(--shadow);padding:13px 15px;background:var(--surface);}
+  .farm-card[data-selected="true"]{border-color:var(--accent);background:var(--surface-2);}
+  .farm-name{font-family:'Bitter',serif;font-weight:700;font-size:15px;}
+  .farm-meta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .check-circle{width:21px;height:21px;border-radius:50%;border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:transparent;}
+  .farm-card[data-selected="true"] .check-circle{background:var(--accent);border-color:var(--accent);color:var(--surface);}
+
+  .amount-card{background:var(--surface);border:1px solid var(--line);border-radius:4px;box-shadow:3px 3px 0 var(--shadow);padding:18px 18px 14px;}
+  .amount-display{display:flex;align-items:baseline;justify-content:center;gap:6px;}
+  .amount-num{font-family:'Bitter',serif;font-weight:800;font-size:46px;color:var(--accent-text);font-variant-numeric:tabular-nums;line-height:1;}
+  .amount-unit{font-family:'Bitter',serif;font-weight:700;font-size:16px;color:var(--ink-soft);}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:var(--line);border-radius:3px;outline:none;margin:14px 0 4px;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-shadow:2px 2px 0 var(--shadow);cursor:pointer;}
+  input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-shadow:2px 2px 0 var(--shadow);cursor:pointer;}
+  input[type=range]::-moz-range-track{width:100%;height:6px;background:var(--line);border-radius:3px;}
+  .range-ends{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);}
+
+  .reveal-panel{background:var(--surface);border-left:3px solid var(--accent);padding:13px 15px;box-shadow:2px 2px 0 var(--shadow);}
+  .reveal-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;gap:8px;}
+  .reveal-top span{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);}
+  .reveal-msg{font-size:13.5px;line-height:1.5;}
+
+  .day-pill-row{display:flex;gap:5px;}
+  .day-pill{flex:1;text-align:center;padding:8px 0;border-radius:4px;background:var(--surface);color:var(--ink-soft);border:1.5px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;}
+  .day-pill[data-active="true"]{background:var(--accent);color:var(--surface);border-color:var(--accent);}
+  .hint{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-soft);margin-top:7px;min-height:14px;}
+
+  .step-dots{display:flex;gap:5px;justify-content:center;}
+  .step-dots span{width:6px;height:6px;border-radius:50%;background:var(--line);}
+  .step-dots span[data-on="true"]{background:var(--accent);}
+
+  /* ---------- main shell ---------- */
+  #view-main{flex:1;display:none;flex-direction:column;min-height:100vh;min-height:100dvh;}
+  #main-content{flex:1;overflow-y:auto;padding:calc(env(safe-area-inset-top,0px) + 26px) 20px calc(86px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:16px;}
+
+  .avatar{width:38px;height:38px;border-radius:50%;background:var(--surface);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+
+  .hen-card{display:flex;flex-direction:column;align-items:center;gap:2px;}
+  .hen-name{font-family:'Bitter',serif;font-weight:700;font-size:19px;margin-top:4px;}
+  .hen-meta{font-size:13px;color:var(--ink-soft);}
+
+  .day-row{display:flex;gap:7px;}
+  .day-chip{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 0;border:1.5px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink-soft);}
+  .day-chip .dot{width:5px;height:5px;border-radius:50%;background:transparent;}
+  .day-chip[data-today="true"] .dot{background:var(--accent);}
+  .day-chip[data-fed="true"]{color:var(--ink);}
+  .day-chip[data-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--surface);}
+  .day-chip[data-today="true"][data-selected="true"] .dot{background:var(--surface);}
+
+  .stat-row{display:flex;gap:10px;}
+  .stat-tile{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:13px 14px;box-shadow:2px 2px 0 var(--shadow);}
+  .stat-tile .label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);}
+  .stat-tile .value{font-family:'Bitter',serif;font-weight:700;font-size:20px;margin-top:4px;font-variant-numeric:tabular-nums;}
+
+  .egg-summary-num{display:flex;align-items:baseline;gap:8px;}
+  .egg-summary-num .n{font-family:'Bitter',serif;font-weight:800;font-size:34px;color:var(--accent-text);}
+  .egg-summary-num .u{font-family:'Bitter',serif;font-weight:700;font-size:15px;color:var(--ink-soft);}
+
+  .stepper{display:flex;align-items:flex-start;margin-top:14px;}
+  .step{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;}
+  .step-track{width:100%;display:flex;align-items:center;}
+  .step-line{flex:1;height:2px;background:var(--line);}
+  .step-line.first{background:transparent !important;}
+  .step-dot{width:14px;height:14px;border-radius:50%;background:var(--surface);border:2px solid var(--line);flex-shrink:0;}
+  .step[data-reached="true"] .step-dot{background:var(--accent);border-color:var(--accent);}
+  .step[data-reached="true"] .step-line{background:var(--accent);}
+  .step-label{font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:600;color:var(--ink-soft);}
+  .step[data-reached="true"] .step-label{color:var(--ink);}
+
+  .pill-row{display:flex;gap:6px;flex-wrap:wrap;}
+  .pill{padding:8px 13px;border-radius:20px;background:var(--surface);color:var(--ink-soft);border:1.5px solid var(--line);font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:600;}
+  .pill[data-active="true"]{background:var(--accent);color:var(--surface);border-color:var(--accent);}
+
+  .stub-list{display:flex;flex-direction:column;gap:8px;}
+  .stub{display:flex;align-items:baseline;gap:12px;background:var(--surface);padding:11px 13px;box-shadow:2px 2px 0 var(--shadow);border-left:3px solid var(--line);}
+  .stub[data-type="bonus"]{border-left-color:var(--yolk);}
+  .stub[data-type="summary"]{border-left-color:var(--accent);}
+  .stub .when{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);flex:0 0 64px;}
+  .stub .msg{flex:1;font-size:12.5px;line-height:1.4;}
+  .stub .tag{font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ink-soft);flex:0 0 auto;font-weight:600;}
+  .stub[data-type="bonus"] .tag{background:var(--yolk);color:#241B14;padding:2px 6px;}
+  .stub[data-type="summary"] .tag{color:var(--accent-text);}
+  .empty-note{font-size:13px;color:var(--ink-soft);text-align:center;padding:24px 12px;}
+
+  .round-btn{width:38px;height:38px;border-radius:50%;background:var(--surface-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .stepper-row{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:10px;}
+  .stepper-num{font-family:'Bitter',serif;font-weight:800;font-size:26px;color:var(--accent-text);font-variant-numeric:tabular-nums;min-width:82px;text-align:center;}
+  .center-mono{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-soft);text-align:center;}
+
+  .switch-track{width:44px;height:25px;border-radius:13px;background:var(--accent);position:relative;flex-shrink:0;transition:background .15s ease;}
+  .switch-track[data-on="false"]{background:var(--ink-soft);}
+  .switch-knob{width:19px;height:19px;border-radius:50%;background:var(--surface);position:absolute;top:3px;left:22px;box-shadow:1px 1px 0 var(--shadow);transition:left .15s ease;}
+  .switch-track[data-on="false"] .switch-knob{left:3px;}
+
+  .demo-box{border:1.5px dashed var(--line);border-radius:4px;padding:14px 16px;}
+  .demo-box .app-eyebrow{color:var(--sage);}
+
+  /* ---------- tab bar ---------- */
+  #tabbar{
+    position:fixed;left:0;right:0;bottom:0;
+    max-width:480px;margin:0 auto;
+    height:calc(70px + env(safe-area-inset-bottom,0px));
+    padding-bottom:env(safe-area-inset-bottom,0px);
+    background:var(--surface);border-top:1px solid var(--line);display:flex;z-index:5;
+  }
+  .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--ink-soft);cursor:pointer;}
+  .tab[data-active="true"]{color:var(--accent-text);}
+  .tab-mark{width:20px;height:2px;background:transparent;border-radius:2px;}
+  .tab[data-active="true"] .tab-mark{background:var(--accent-text);}
+  .tab-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;}
+
+  /* ---------- toasts ---------- */
+  #toast-host{
+    position:fixed;top:0;left:0;right:0;display:flex;flex-direction:column;align-items:center;
+    padding-top:calc(env(safe-area-inset-top,0px) + 10px);z-index:20;pointer-events:none;
+  }
+  .toast{
+    width:calc(100% - 32px);max-width:440px;background:var(--surface);border:1px solid var(--line);
+    border-left:3px solid var(--accent);box-shadow:2px 3px 0 var(--shadow);padding:11px 14px;margin-bottom:8px;
+    display:flex;align-items:baseline;gap:10px;
+    transform:translateY(-140%);opacity:0;transition:transform .32s cubic-bezier(.2,.8,.3,1.1),opacity .32s ease;
+  }
+  .toast.in{transform:translateY(0);opacity:1;}
+  .toast .t-tag{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--accent-text);letter-spacing:.06em;flex:0 0 auto;}
+  .toast .t-body{font-size:12.5px;flex:1;}
+
+  @media (prefers-reduced-motion: reduce){
+    .pressable, .switch-knob, .switch-track, .toast{transition:none;}
+  }
+</style>
+
+<div id="shell">
+  <div id="toast-host"></div>
+  <div id="view-onboarding"></div>
+  <div id="view-main">
+    <div id="main-content"></div>
+    <div id="tabbar"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ============ constants ============
+  var STORAGE_KEY = 'kvoc_app_state_v1';
+  var FARMS = [
+    {key:'lipa', name:'Farma U Lípy', meta:'volný výběh · Sázava, 18 km'},
+    {key:'dvur', name:'Dvůr Na Kopci', meta:'bio chov · Benešov, 24 km'},
+    {key:'polana', name:'Polana Farm', meta:'volný výběh · Neveklov, 9 km'}
+  ];
+  var FEED_MESSAGES = [
+    'dostala ranní zrníčko.',
+    'se napila studánkové vody.',
+    'se vyhřívala na sluníčku a hrabala se v hlíně.',
+    'si pochutnala na tučném červíkovi.',
+    'si protáhla křídla na dvorku.',
+    'si hověla v čerstvé podestýlce.',
+    'se proháněla po dvorku za motýlem.'
+  ];
+  var DAY_LABELS = ['NE','PO','ÚT','ST','ČT','PÁ','SO'];
+
+  // ============ state ============
+  var defaults = {
+    onboarded:false, farm:'lipa', henName:'Nuška', dailyAmount:20,
+    address:'Na Kopci 12, Praha 6', paused:false, dayOffset:0, activeTab:'home',
+    feedLog:{}, deliveries:[], pausedDates:{}
+  };
+  var state = loadState();
+  if(!state){ state = JSON.parse(JSON.stringify(defaults)); }
+  var obStep = 1;
+
+  function loadState(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){ var parsed = JSON.parse(raw); return Object.assign({}, defaults, parsed); }
+    }catch(e){}
+    return null;
+  }
+  function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
+
+  // ============ date helpers ============
+  function pad(n){ return n<10 ? '0'+n : ''+n; }
+  function dateKey(d){ return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
+  function getNow(){ return new Date(Date.now() + state.dayOffset*86400000); }
+  function dateOnly(d){ return new Date(d.getFullYear(), d.getMonth(), d.getDate()); }
+  function isWeekday(d){ var g=d.getDay(); return g>=1 && g<=5; }
+  function mondayOf(d){
+    var g=d.getDay(); var diff=(g===0)?-6:(1-g);
+    var m=dateOnly(d); m.setDate(m.getDate()+diff); return m;
+  }
+  function fmtDateHuman(key){
+    var parts=key.split('-'); return parts[2]+'.'+parts[1]+'.';
+  }
+
+  // ============ business logic ============
+  function runTick(){
+    var today = getNow();
+    var toasts = [];
+    if(isWeekday(today)){
+      var key = dateKey(today);
+      if(state.paused){
+        state.pausedDates[key] = true;
+      } else if(!state.feedLog[key]){
+        var msg = FEED_MESSAGES[Math.floor(Math.random()*FEED_MESSAGES.length)];
+        state.feedLog[key] = {amount:state.dailyAmount, msg:state.henName+' '+msg, bonus:false, date:key};
+        toasts.push({tag:'−'+state.dailyAmount+' Kč', body:state.feedLog[key].msg});
+
+        if(Math.random() < 0.18){
+          var bmsg = state.henName+' má dobrý den — snesla vejce navíc. Přidáme ho do páteční bedýnky.';
+          state.feedLog[key+'-bonus'] = {amount:0, msg:bmsg, bonus:true, date:key};
+          toasts.push({tag:'BONUS', body:bmsg});
+        }
+
+        if(today.getDay()===5){
+          var mon = mondayOf(today);
+          var weekAmount = 0;
+          for(var i=0;i<5;i++){
+            var dd = new Date(mon.getTime()+i*86400000);
+            var k = dateKey(dd);
+            if(state.feedLog[k] && !state.feedLog[k].bonus) weekAmount += state.feedLog[k].amount;
+          }
+          var eggs = Math.max(1, Math.round(weekAmount/12.5));
+          state.deliveries.push({weekStart:dateKey(mon), eggs:eggs, amount:weekAmount, status:'transit', date:key});
+          toasts.push({tag:'PÁTEK', body:'Tenhle týden jsi '+state.henName+' krmil. Dnes odpoledne dorazí '+eggs+' vajec.'});
+        }
+      }
+    }
+    if(state.deliveries.length){
+      var last = state.deliveries[state.deliveries.length-1];
+      if(last.status==='transit'){
+        var fridayDate = dateOnly(new Date(last.date+'T00:00:00'));
+        var daysSince = Math.round((dateOnly(today)-fridayDate)/86400000);
+        if(daysSince >= 1){
+          last.status='delivered';
+          toasts.push({tag:'DORUČENO', body:last.eggs+' vajec právě dorazilo ke dveřím.'});
+        }
+      }
+    }
+    saveState();
+    if(toasts.length) showToasts(toasts);
+  }
+
+  function computeStreak(){
+    var d = dateOnly(getNow());
+    var todayKey = dateKey(getNow());
+    var streak = 0;
+    for(var i=0;i<370;i++){
+      if(isWeekday(d)){
+        var key = dateKey(d);
+        if(state.feedLog[key] && !state.feedLog[key].bonus){ streak++; }
+        else if(state.pausedDates && state.pausedDates[key]){ /* frozen by pause, does not break */ }
+        else if(key===todayKey){ /* today not ticked yet, skip */ }
+        else { break; }
+      }
+      d = new Date(d.getTime()-86400000);
+    }
+    return streak;
+  }
+
+  function computeWeekBalance(){
+    var mon = mondayOf(getNow());
+    var today = dateOnly(getNow());
+    var sum = 0;
+    for(var i=0;i<5;i++){
+      var dd = new Date(mon.getTime()+i*86400000);
+      if(dd.getTime() > today.getTime()) break;
+      var k = dateKey(dd);
+      if(state.feedLog[k] && !state.feedLog[k].bonus) sum += state.feedLog[k].amount;
+    }
+    return sum;
+  }
+
+  function eggsPreview(amount){ return Math.max(1, Math.round(amount*5/12.5)); }
+
+  // ============ toasts ============
+  var toastQueue = [];
+  var toastBusy = false;
+  function showToasts(list){
+    toastQueue = toastQueue.concat(list);
+    pumpToasts();
+  }
+  function pumpToasts(){
+    if(toastBusy || !toastQueue.length) return;
+    toastBusy = true;
+    var t = toastQueue.shift();
+    var host = document.getElementById('toast-host');
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.innerHTML = '<span class="t-tag mono">'+escapeHtml(t.tag)+'</span><span class="t-body">'+escapeHtml(t.body)+'</span>';
+    host.appendChild(el);
+    requestAnimationFrame(function(){ requestAnimationFrame(function(){ el.classList.add('in'); }); });
+    setTimeout(function(){
+      el.classList.remove('in');
+      setTimeout(function(){
+        if(el.parentNode) el.parentNode.removeChild(el);
+        toastBusy = false;
+        pumpToasts();
+      }, 320);
+    }, 3400);
+
+    if(('Notification' in window)){
+      try{
+        if(Notification.permission==='granted'){
+          new Notification('Kvoč · '+t.tag, {body:t.body});
+        }
+      }catch(e){}
+    }
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+
+  // ============ icons ============
+  var ICO = {
+    back: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+    check: '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    arrowR: '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>',
+    minus: '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><line x1="12" y1="5" x2="12" y2="19"/></svg>',
+    egg: '<svg viewBox="0 0 100 130" width="16" height="21"><path d="M50,4 C74,4 90,40 90,78 C90,108 72,126 50,126 C28,126 10,108 10,78 C10,40 26,4 50,4 Z" style="fill:var(--accent)"/></svg>',
+    home: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 11 12 4 20.5 11"/><path d="M5.5 9.5 V20 H18.5 V9.5"/></svg>',
+    list: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="17" x2="19" y2="17"/></svg>',
+    sliders: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="var(--surface)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="9" cy="12" r="2" fill="var(--surface)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="var(--surface)"/></svg>',
+    hen: '<svg viewBox="0 0 220 190" width="150" height="130" role="img" aria-label="Ilustrace slepičky">'+
+      '<ellipse cx="95" cy="168" rx="70" ry="9" style="fill:var(--line);opacity:.5"/>'+
+      '<path d="M50,92 C22,76 14,44 34,18 C42,52 54,74 66,96 Z" style="fill:var(--ink-soft);opacity:.5"/>'+
+      '<path d="M58,90 C34,70 28,42 46,20 C52,50 62,70 72,94 Z" style="fill:var(--feather)"/>'+
+      '<line x1="82" y1="148" x2="77" y2="167" style="stroke:var(--yolk);stroke-width:5" stroke-linecap="round"/>'+
+      '<line x1="112" y1="148" x2="119" y2="167" style="stroke:var(--yolk);stroke-width:5" stroke-linecap="round"/>'+
+      '<ellipse cx="100" cy="112" rx="58" ry="44" style="fill:var(--feather)"/>'+
+      '<path d="M60,100 Q100,120 140,96" style="stroke:var(--ink-soft);stroke-width:1.5;opacity:.35" fill="none"/>'+
+      '<circle cx="158" cy="64" r="27" style="fill:var(--feather)"/>'+
+      '<circle cx="148" cy="41" r="7" style="fill:var(--accent)"/><circle cx="159" cy="36" r="8" style="fill:var(--accent)"/><circle cx="170" cy="41" r="7" style="fill:var(--accent)"/>'+
+      '<ellipse cx="171" cy="83" rx="5" ry="8" style="fill:var(--accent)"/>'+
+      '<polygon points="183,61 199,68 183,76" style="fill:var(--yolk)"/>'+
+      '<circle cx="165" cy="60" r="3.5" style="fill:var(--ink)"/></svg>'
+  };
+
+  // ============ render: onboarding ============
+  function renderOnboarding(){
+    var host = document.getElementById('view-onboarding');
+    if(obStep===1){
+      var farmCards = FARMS.map(function(f){
+        var sel = state.farm===f.key;
+        return '<div class="farm-card pressable" data-action="select-farm" data-farm="'+f.key+'" data-selected="'+sel+'">'+
+          '<div><div class="farm-name">'+escapeHtml(f.name)+'</div><div class="farm-meta">'+escapeHtml(f.meta)+'</div></div>'+
+          '<div class="check-circle">'+ICO.check+'</div></div>';
+      }).join('');
+      host.innerHTML =
+        '<div class="topbar"><span></span><span class="app-eyebrow">Adopce</span><span class="mono" style="font-size:10.5px;color:var(--ink-soft);">Krok 1 z 2</span></div>'+
+        '<div><div class="app-h1">Vyber farmu</div><div class="app-sub" style="margin-top:6px;">Slepička poroste u konkrétního farmáře — vždycky víš, odkud tvoje vejce jsou.</div></div>'+
+        '<div style="display:flex;flex-direction:column;gap:9px;">'+farmCards+'</div>'+
+        '<div><div class="field-label">Pojmenuj svoji slepičku</div><input class="name-input" id="ob-name" type="text" value="'+escapeHtml(state.henName)+'"></div>'+
+        '<div style="flex:1;"></div>'+
+        '<div class="step-dots"><span data-on="true"></span><span data-on="false"></span></div>'+
+        '<div class="pressable" data-action="onb-next"><div class="btn-primary"><span>Pokračovat</span>'+ICO.arrowR+'</div></div>';
+    } else {
+      var weekly = state.dailyAmount*5;
+      var eggs = eggsPreview(state.dailyAmount);
+      var pills = ['PO','ÚT','ST','ČT','PÁ','SO','NE'].map(function(l,i){
+        var active = l==='PÁ';
+        return '<div class="day-pill pressable" data-action="day-pill" data-active="'+active+'">'+l+'</div>';
+      }).join('');
+      host.innerHTML =
+        '<div class="topbar"><span class="pressable" data-action="onb-back">'+ICO.back+'</span><span class="app-eyebrow">Adopce</span><span class="mono" style="font-size:10.5px;color:var(--ink-soft);">Krok 2 z 2</span></div>'+
+        '<div><div class="app-h1" style="font-size:22px;">Kolik jí dáš denně?</div><div class="app-sub" style="margin-top:6px;">Posuň jezdcem. V pátek se nastřádaná částka promění ve vejce.</div></div>'+
+        '<div class="amount-card">'+
+          '<div class="amount-display"><span class="amount-num" id="ob-amount-num">'+state.dailyAmount+'</span><span class="amount-unit">Kč / den</span></div>'+
+          '<input type="range" min="10" max="40" step="5" value="'+state.dailyAmount+'" id="ob-range">'+
+          '<div class="range-ends"><span>10 Kč</span><span>40 Kč</span></div>'+
+        '</div>'+
+        '<div class="reveal-panel"><div class="app-eyebrow" style="font-size:10px;">Odhad na pátek</div>'+
+          '<div class="reveal-msg" style="margin-top:5px;">Týdně naspoříš <b id="ob-weekly">'+weekly+'</b> Kč → přibližně <b id="ob-eggs">'+eggs+'</b> vajec.</div></div>'+
+        '<div><div class="field-label">Doručovací adresa</div><input class="text-input" id="ob-address" type="text" value="'+escapeHtml(state.address)+'"></div>'+
+        '<div><div class="field-label">Den svozu</div><div class="day-pill-row">'+pills+'</div><div class="hint mono" id="ob-hint"></div></div>'+
+        '<div style="flex:1;"></div>'+
+        '<div class="step-dots"><span data-on="false"></span><span data-on="true"></span></div>'+
+        '<div class="pressable" data-action="onb-finish"><div class="btn-primary"><span>Adoptovat slepičku</span></div></div>';
+    }
+  }
+
+  // ============ render: home ============
+  function renderHome(){
+    var today = getNow();
+    var mon = mondayOf(today);
+    var todayKey = dateKey(today);
+    var days = [];
+    for(var i=0;i<5;i++){
+      var dd = new Date(mon.getTime()+i*86400000);
+      var key = dateKey(dd);
+      var isToday = key===todayKey;
+      var fed = !!(state.feedLog[key] && !state.feedLog[key].bonus);
+      days.push({key:key, label:DAY_LABELS[dd.getDay()], fed:fed, today:isToday});
+    }
+    if(!window.__selDay || days.every(function(d){return d.key!==window.__selDay;})){
+      window.__selDay = todayKey;
+    }
+    var selDay = days.filter(function(d){return d.key===window.__selDay;})[0] || days[0];
+    var selEntry = state.feedLog[selDay.key];
+    var msg, amountLbl;
+    if(selEntry){ msg = selEntry.msg; amountLbl = '−'+selEntry.amount+' Kč'; }
+    else if(selDay.key === todayKey && state.paused){ msg = 'Dnes je appka pozastavená — '+state.henName+' se dnes nekrmila.'; amountLbl='—'; }
+    else if(selDay.key < todayKey){ msg = 'Tenhle den se '+state.henName+' nenakrmila — appka buď ještě neběžela, nebo byla pozastavená.'; amountLbl='—'; }
+    else { msg = 'Tenhle den ještě nenastal.'; amountLbl='—'; }
+
+    var dayChips = days.map(function(d){
+      return '<div class="day-chip pressable" data-action="select-home-day" data-day="'+d.key+'" data-fed="'+d.fed+'" data-today="'+d.today+'" data-selected="'+(d.key===selDay.key)+'">'+
+        '<span class="mono">'+d.label+'</span><span class="dot"></span></div>';
+    }).join('');
+
+    var balance = computeWeekBalance();
+    var streak = computeStreak();
+
+    var deliveryHtml = '';
+    if(state.deliveries.length){
+      var last = state.deliveries[state.deliveries.length-1];
+      var reachedReady = true;
+      var reachedTransit = true;
+      var reachedDelivered = last.status==='delivered';
+      deliveryHtml =
+        '<div class="card">'+
+          '<div class="app-eyebrow">Pátek '+fmtDateHuman(last.date)+'</div>'+
+          '<div class="egg-summary-num" style="margin-top:6px;"><span class="n">'+last.eggs+'</span><span class="u">vajec</span></div>'+
+          '<div class="app-sub">z tvého příspěvku '+last.amount+' Kč za ten týden</div>'+
+          '<div class="stepper">'+
+            step('ready','PŘIPRAVENO',true,true)+
+            step('transit','NA CESTĚ',true,last.status!=='ready')+
+            step('delivered','DORUČENO',reachedDelivered,false)+
+          '</div>'+
+        '</div>';
+    }
+
+    var host = document.getElementById('main-content');
+    host.innerHTML =
+      '<div class="topbar"><div><div class="app-eyebrow">'+greeting()+'</div><div class="app-h1" style="font-size:23px;margin-top:2px;">Ahoj</div></div>'+
+        '<div class="avatar">'+ICO.egg+'</div></div>'+
+      '<div class="card hen-card">'+ICO.hen+'<div class="hen-name">'+escapeHtml(state.henName)+'</div>'+
+        '<div class="hen-meta">'+escapeHtml(farmName(state.farm))+'</div></div>'+
+      '<div><div class="field-label">Tento týden</div><div class="day-row">'+dayChips+'</div></div>'+
+      '<div class="reveal-panel"><div class="reveal-top"><span>'+selDay.label+' '+fmtDateHuman(selDay.key)+'</span><span>'+amountLbl+'</span></div>'+
+        '<div class="reveal-msg">'+escapeHtml(msg)+'</div></div>'+
+      '<div class="stat-row">'+
+        '<div class="stat-tile"><div class="label">Zůstatek k pátku</div><div class="value">'+balance+' Kč</div></div>'+
+        '<div class="stat-tile"><div class="label">Série</div><div class="value">'+streak+' dní</div></div>'+
+      '</div>'+
+      deliveryHtml;
+  }
+  function step(key,label,reached,notFirst){
+    var firstCls = notFirst ? '' : ' first';
+    var lastCls = key==='delivered' ? ' first' : '';
+    return '<div class="step" data-reached="'+reached+'"><div class="step-track">'+
+      '<div class="step-line'+(key==='ready'?' first':'')+'"></div><div class="step-dot"></div>'+
+      '<div class="step-line'+(key==='delivered'?' first':'')+'"></div></div>'+
+      '<span class="step-label">'+label+'</span></div>';
+  }
+  function greeting(){
+    var h = getNow().getHours();
+    if(h<11) return 'Dobré ráno';
+    if(h<18) return 'Dobré odpoledne';
+    return 'Dobrý večer';
+  }
+  function farmName(key){ var f=FARMS.filter(function(x){return x.key===key;})[0]; return f? f.name+' · '+f.meta.split('·')[0].trim() : ''; }
+
+  // ============ render: activity ============
+  function renderActivity(){
+    var entries = [];
+    Object.keys(state.feedLog).forEach(function(k){
+      var e = state.feedLog[k];
+      entries.push({when:e.date, type: e.bonus?'bonus':'feed', msg:e.msg, tag: e.bonus?'BONUS':('−'+e.amount+' Kč'), sortKey:k});
+    });
+    state.deliveries.forEach(function(d){
+      entries.push({when:d.date, type:'summary', msg:'Ten týden jsi '+state.henName+' krmil za '+d.amount+' Kč. '+(d.status==='delivered'?'Vejce ('+d.eggs+') už dorazila.':'Dnes odpoledne dorazí '+d.eggs+' vajec.'), tag: d.status==='delivered'?'DORUČENO':'SOUHRN', sortKey:d.date+'-z'});
+    });
+    entries.sort(function(a,b){ return a.sortKey < b.sortKey ? 1 : -1; });
+    entries = entries.slice(0,20);
+
+    var filter = window.__actFilter || 'all';
+    var visible = entries.filter(function(e){
+      if(filter==='all') return true;
+      if(filter==='feed') return e.type==='feed';
+      return e.type==='bonus' || e.type==='summary';
+    });
+
+    var list = visible.length ? visible.map(function(e){
+      return '<div class="stub" data-type="'+e.type+'"><span class="when mono">'+fmtDateHuman(e.when)+'</span>'+
+        '<span class="msg">'+escapeHtml(e.msg)+'</span><span class="tag">'+escapeHtml(e.tag)+'</span></div>';
+    }).join('') : '<div class="empty-note">Zatím žádná aktivita v tomhle filtru.</div>';
+
+    var filters = [['all','Vše'],['feed','Krmení'],['bonus','Souhrny']].map(function(f){
+      return '<div class="pill pressable" data-action="filter" data-filter="'+f[0]+'" data-active="'+(filter===f[0])+'">'+f[1]+'</div>';
+    }).join('');
+
+    var host = document.getElementById('main-content');
+    host.innerHTML =
+      '<div><div class="app-eyebrow">Historie</div><div class="app-h1" style="margin-top:2px;">Aktivita</div></div>'+
+      '<div class="pill-row">'+filters+'</div>'+
+      '<div class="stub-list">'+list+'</div>';
+  }
+
+  // ============ render: settings ============
+  function renderSettings(){
+    var weekly = state.dailyAmount*5;
+    var eggs = eggsPreview(state.dailyAmount);
+    var notifSupported = ('Notification' in window);
+    var notifPerm = notifSupported ? Notification.permission : 'unsupported';
+    var notifLabel = notifPerm==='granted' ? 'Oznámení povolena' : (notifPerm==='denied' ? 'Oznámení zablokována v prohlížeči' : 'Povolit oznámení');
+
+    var host = document.getElementById('main-content');
+    host.innerHTML =
+      '<div class="app-h1">Nastavení</div>'+
+      '<div class="card"><div class="field-label">Tvoje slepička</div>'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">'+
+          '<div><div class="farm-name">'+escapeHtml(state.henName)+'</div><div class="farm-meta">'+escapeHtml(farmName(state.farm))+'</div></div>'+
+          '<div style="opacity:.7;">'+ICO.egg+'</div></div></div>'+
+      '<div class="card"><div class="field-label">Denní příspěvek</div>'+
+        '<div class="stepper-row"><div class="round-btn pressable" data-action="amount-minus">'+ICO.minus+'</div>'+
+          '<div class="stepper-num">'+state.dailyAmount+' Kč</div>'+
+          '<div class="round-btn pressable" data-action="amount-plus">'+ICO.plus+'</div></div>'+
+        '<div class="center-mono" style="margin-top:9px;">týdně '+weekly+' Kč · přibližně '+eggs+' vajec</div></div>'+
+      '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;">'+
+          '<div><div class="field-label">Pauza</div><div style="font-size:12.5px;margin-top:6px;">'+(state.paused?'Pozastaveno — dokud znovu nezapneš.':'Aktivní.')+'</div></div>'+
+          '<div class="switch-track pressable" data-action="toggle-pause" data-on="'+(!state.paused)+'"><div class="switch-knob"></div></div></div>'+
+        (state.paused? '<div class="hint mono" style="margin-top:9px;color:var(--accent-text);">Série se nezruší, jen se zmrazí do dalšího zapnutí.</div>' : '')+
+      '</div>'+
+      '<div class="card"><div class="field-label">Doručení</div>'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;"><div style="font-size:13.5px;">'+escapeHtml(state.address)+'</div></div>'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;"><div style="font-size:13.5px;">Den svozu</div><span class="mono" style="font-size:11px;color:var(--ink-soft);">Pátek</span></div></div>'+
+      '<div class="card"><div class="field-label">Oznámení</div>'+
+        '<div class="pressable" data-action="request-notif" style="margin-top:6px;"><div class="btn-primary" style="background:'+(notifPerm==='granted'?'var(--sage)':'var(--accent)')+';font-size:13.5px;padding:12px;">'+escapeHtml(notifLabel)+'</div></div>'+
+        '<div class="hint mono" style="margin-top:8px;">V appce vždycky uvidíš oznámení jako lištu nahoře. Skutečná oznámení telefonu závisí na tvém prohlížeči.</div></div>'+
+      '<div class="demo-box">'+
+        '<div class="app-eyebrow">Demo nástroje</div>'+
+        '<div class="center-mono" style="margin-top:8px;">simulované dnes: '+fmtFull(getNow())+'</div>'+
+        '<div class="pressable" data-action="advance-day" style="margin-top:10px;"><div class="btn-primary" style="background:var(--ink-soft);font-size:13px;padding:11px;">Posunout o den →</div></div>'+
+        '<div class="pressable" data-action="reset-app"><div class="btn-secondary">Resetovat appku a začít znovu</div></div>'+
+      '</div>';
+  }
+  function fmtFull(d){
+    var days=['neděle','pondělí','úterý','středa','čtvrtek','pátek','sobota'];
+    return days[d.getDay()]+' '+d.getDate()+'.'+(d.getMonth()+1)+'.';
+  }
+
+  // ============ tab bar ============
+  function renderTabbar(){
+    var tabs = [['home','Domů',ICO.home],['activity','Aktivita',ICO.list],['settings','Nastavení',ICO.sliders]];
+    document.getElementById('tabbar').innerHTML = tabs.map(function(t){
+      var active = state.activeTab===t[0];
+      return '<div class="tab pressable" data-action="tab" data-tab="'+t[0]+'" data-active="'+active+'">'+
+        '<div class="tab-mark"></div>'+t[2]+'<span class="tab-label">'+t[1]+'</span></div>';
+    }).join('');
+  }
+
+  // ============ dispatcher ============
+  function renderAll(){
+    if(!state.onboarded){
+      document.getElementById('view-onboarding').style.display = 'flex';
+      document.getElementById('view-main').style.display = 'none';
+      renderOnboarding();
+      return;
+    }
+    document.getElementById('view-onboarding').style.display = 'none';
+    document.getElementById('view-main').style.display = 'flex';
+    if(state.activeTab==='home') renderHome();
+    else if(state.activeTab==='activity') renderActivity();
+    else renderSettings();
+    renderTabbar();
+  }
+
+  // ============ events (delegated) ============
+  document.addEventListener('click', function(e){
+    var el = e.target.closest('[data-action]');
+    if(!el) return;
+    var action = el.getAttribute('data-action');
+
+    if(action==='select-farm'){ state.farm = el.getAttribute('data-farm'); renderOnboarding(); }
+    else if(action==='onb-next'){
+      var nameEl = document.getElementById('ob-name');
+      state.henName = (nameEl && nameEl.value.trim()) || state.henName || 'Nuška';
+      obStep = 2; renderOnboarding();
+    }
+    else if(action==='onb-back'){ obStep = 1; renderOnboarding(); }
+    else if(action==='day-pill'){
+      var hint = document.getElementById('ob-hint');
+      if(hint && el.getAttribute('data-active')!=='true'){ hint.textContent = 'Zatím jde vybrat jen pátek — víc dní zvažujeme do budoucna.'; }
+    }
+    else if(action==='onb-finish'){
+      var addrEl = document.getElementById('ob-address');
+      if(addrEl) state.address = addrEl.value.trim() || state.address;
+      state.onboarded = true;
+      window.__selDay = null;
+      saveState();
+      runTick();
+      renderAll();
+    }
+    else if(action==='tab'){ state.activeTab = el.getAttribute('data-tab'); saveState(); renderAll(); }
+    else if(action==='select-home-day'){ window.__selDay = el.getAttribute('data-day'); renderHome(); }
+    else if(action==='filter'){ window.__actFilter = el.getAttribute('data-filter'); renderActivity(); }
+    else if(action==='amount-minus'){ state.dailyAmount = Math.max(10, state.dailyAmount-5); saveState(); renderSettings(); }
+    else if(action==='amount-plus'){ state.dailyAmount = Math.min(40, state.dailyAmount+5); saveState(); renderSettings(); }
+    else if(action==='toggle-pause'){ state.paused = !state.paused; saveState(); renderSettings(); }
+    else if(action==='advance-day'){ state.dayOffset += 1; window.__selDay=null; saveState(); runTick(); renderAll(); }
+    else if(action==='reset-app'){
+      if(window.confirm('Smazat appku a vrátit se k adopci? Tohle nejde vzít zpět.')){
+        state = JSON.parse(JSON.stringify(defaults));
+        obStep = 1; window.__selDay=null; window.__actFilter=null;
+        saveState(); renderAll();
+      }
+    }
+    else if(action==='request-notif'){
+      if('Notification' in window){
+        try{
+          Notification.requestPermission().then(function(){ renderSettings(); });
+        }catch(e){ renderSettings(); }
+      } else { renderSettings(); }
+    }
+  });
+
+  document.addEventListener('input', function(e){
+    if(e.target.id==='ob-range'){
+      var amt = Number(e.target.value);
+      document.getElementById('ob-amount-num').textContent = amt;
+      document.getElementById('ob-weekly').textContent = amt*5;
+      document.getElementById('ob-eggs').textContent = eggsPreview(amt);
+      state.dailyAmount = amt;
+    }
+    else if(e.target.id==='ob-address'){ state.address = e.target.value; }
+  });
+
+  // ============ boot ============
+  // the very first tick only runs once onboarding actually finishes (onb-finish),
+  // so day one reflects the hen name / amount the user just chose, not the defaults
+  if(state.onboarded){ runTick(); }
+  renderAll();
+})();
+</script>
