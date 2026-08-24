@@ -17,27 +17,37 @@ neodhalí.
 
 - **FastAPI** server s automatickou dokumentací (`/docs`)
 - **SQLite** databáze (žádný samostatný databázový server není potřeba)
+- **Přihlašování** — registrace, login, JWT tokeny, hesla přes bcrypt.
+  Appka (`Hen`) patří vždy konkrétnímu uživateli; jeden uživatel nevidí
+  ani neupraví appku druhého (ověřeno testem).
+- **Skutečná platební integrace pro Stripe** (`app/integrations/payments.py`)
+  — uložení karty (Setup Intent) a pozdější strhnutí bez přítomnosti
+  zákazníka (off-session Payment Intent), ověřeno proti Stripe dokumentaci
+  a otestováno. Nikdy neběžela proti skutečnému účtu — ten je na tobě, viz
+  [`docs/PAYMENT_INTEGRATION.md`](docs/PAYMENT_INTEGRATION.md). Výchozí
+  a bezpečný poskytovatel zůstává mock (appka jede i bez platebního účtu).
 - **Skutečný denní úkol** (APScheduler), který každé ráno spustí krmení
   a v pátek spočítá vejce — obdoba tlačítka "Posunout o den" z frontendového
   dema, ale doopravdy podle hodin, ne na kliknutí
-- **Jasně oddělená místa** pro platební bránu a push notifikace
-  (`app/integrations/`) — teď jen mockované, ať jde vidět přesně kam sáhnout
-- **Testy**, které se dají spustit, ne jen přečíst
+- **Rozjetý Android build** appky — viz [`../mobile-app/`](../mobile-app/)
+- **Jasně oddělené místo** pro push notifikace (`app/integrations/notifications.py`)
+  — teď jen mockované (loguje do konzole)
+- **Testy**, které se dají spustit, ne jen přečíst (21 testů: API, auth,
+  platby)
 
 ## Co v tom NENÍ (záměrně)
 
-- **Žádné skutečné platby.** Peněženka a "denní strhávání" jsou jen záznamy
-  v databázi. Napojení reálné platební brány je v
-  [`docs/PAYMENT_INTEGRATION.md`](docs/PAYMENT_INTEGRATION.md).
-- **Žádné přihlašování.** `Hen` (adopce) nese jen volné jméno vlastníka —
-  není tu tabulka uživatelů, hesla ani OAuth. Přidat pořádnou autentizaci je
-  nutný krok dřív, než se k tomu přiblíží skuteční zákazníci.
-- **Žádné skutečné push notifikace.** Zatím se jen vypisují do konzole —
+- **Skutečné peníze.** Platební kód je hotový a otestovaný proti mocku,
+  ale bez tvého vlastního Stripe účtu (a bez skutečné firmy/živnosti pro
+  ostrý provoz) nikam doopravdy neteče. Viz `PAYMENT_INTEGRATION.md`.
+- **Skutečné push notifikace.** Zatím se jen vypisují do konzole —
   napojení Firebase/APNs je popsané v `app/integrations/notifications.py`.
-- **Žádná appka v App Store / Google Play.** Návod je v
+- **Appka doopravdy v App Store / Google Play.** `mobile-app/` sestaví
+  Android projekt až na jeden krok (Android SDK, viz jeho README); iOS
+  potřebuje Mac. Návod na zbytek cesty (účty, review) je v
   [`docs/APP_STORE_GUIDE.md`](docs/APP_STORE_GUIDE.md).
-- **Žádné skutečné farmy ani rozvoz.** To je byznys/logistická stránka věci
-  — checklist je v [`docs/BUSINESS_CHECKLIST.md`](docs/BUSINESS_CHECKLIST.md).
+- **Skutečné farmy ani rozvoz.** To je byznys/logistická stránka věci —
+  checklist je v [`docs/BUSINESS_CHECKLIST.md`](docs/BUSINESS_CHECKLIST.md).
 
 ## Jak to spustit
 
@@ -58,14 +68,32 @@ místo, kde si to proklikat bez psaní kódu) je na
 
 ### Vyzkoušet bez čekání na skutečný pátek
 
+Nejdřív účet a adopce (appka teď vyžaduje přihlášení):
+
+```bash
+curl -X POST http://127.0.0.1:8000/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"ja@example.com","password":"nejake silne heslo"}'
+# -> zkopíruj access_token z odpovědi
+
+curl -X POST http://127.0.0.1:8000/hens \
+  -H "Authorization: Bearer <token>" -H "Content-Type: application/json" \
+  -d '{"hen_name":"Nuška","farm_key":"lipa","daily_amount":20}'
+```
+
+Pak posouvej dny:
+
 ```bash
 curl -X POST http://127.0.0.1:8000/admin/run-tick?days_offset=1
 ```
 
 Zavolej to postupně s `days_offset=1,2,3...` a sleduj, jak přibývají
-záznamy v `/hens/{id}/feed-log` a jak se v pátek objeví položka
-v `/hens/{id}/deliveries`. Přesně totéž dělá tlačítko "Posunout o den"
-ve frontendovém demu.
+záznamy v `/hens/{id}/feed-log` (s `Authorization` hlavičkou) a jak se
+v pátek objeví položka v `/hens/{id}/deliveries`. Přesně totéž dělá
+tlačítko "Posunout o den" ve frontendovém demu.
+
+Nejpohodlnější je to celé proklikat na `/docs` — tlačítko **Authorize**
+nahoře přijme email/heslo přímo tam.
 
 ### Spustit testy
 
@@ -77,24 +105,30 @@ pytest -v
 
 ```
 app/
-  main.py              — FastAPI aplikace, startup/shutdown
-  models.py            — databázové tabulky (Farm, Hen, FeedLogEntry, Delivery, PausedDay)
-  schemas.py            — validace vstupů/výstupů API
-  tick.py                — denní byznys logika (krmení, bonus, páteční svoz, série)
-  scheduler.py            — napojení tick.py na skutečný denní cron
-  config.py                — ceny, časy, limity na jednom místě
+  main.py              — FastAPI aplikace, startup/shutdown, mount /static
+  auth.py               — hashování hesel (bcrypt), JWT tokeny, get_current_user
+  models.py              — databázové tabulky (User, Farm, Hen, FeedLogEntry, Delivery, PausedDay, WalletTopUp)
+  schemas.py               — validace vstupů/výstupů API
+  tick.py                    — denní byznys logika (krmení, bonus, páteční svoz, série)
+  scheduler.py                — napojení tick.py na skutečný denní cron
+  config.py                     — ceny, časy, limity, JWT a platební nastavení na jednom místě
   integrations/
-    payments.py             — MockPaymentProvider + kam zapojit GoPay/Comgate/Stripe
-    notifications.py         — ConsoleNotificationProvider + kam zapojit FCM/APNs
+    payments.py                    — MockPaymentProvider + funkční StripePaymentProvider
+    notifications.py                — ConsoleNotificationProvider + kam zapojit FCM/APNs
   routers/
-    farms.py, hens.py, admin.py   — HTTP endpointy
+    auth.py, farms.py, hens.py, wallet.py, admin.py   — HTTP endpointy
+  static/
+    card-setup.html                                    — testovací stránka pro uložení karty (Stripe.js)
 docs/
-  PAYMENT_INTEGRATION.md   — proč peněženka, ne denní karta; kam zapojit bránu
-  APP_STORE_GUIDE.md        — jak se z webové appky stane appka v App Store/Google Play
+  PAYMENT_INTEGRATION.md   — jak Stripe integraci vyzkoušet, proč peněženka místo denní karty
+  APP_STORE_GUIDE.md        — stav Android/iOS cesty, co zbývá
   BUSINESS_CHECKLIST.md     — co je potřeba zařídit mimo kód (firma, farmáři, regulace)
 tests/
-  test_api.py                — smoke testy, které si tvůj vývojář (nebo Claude příště) spustí
+  test_api.py                — API, auth, vlastnictví dat mezi uživateli
+  test_payments.py            — že Stripe kód volá SDK správně (bez potřeby účtu)
 ```
+
+Viz i [`../mobile-app/`](../mobile-app/) — Capacitor/Android obal appky.
 
 ## Další krok
 

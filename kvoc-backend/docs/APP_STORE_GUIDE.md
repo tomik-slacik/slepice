@@ -1,11 +1,14 @@
 # Cesta appky do App Store a Google Play
 
-Frontend appky (viz kořen repozitáře / publikovaný artefakt) je dnes webová
-appka — běží v prohlížeči, dá se přidat na plochu, ale není to nativní
-appka ve smyslu App Store / Google Play. Tenhle dokument popisuje, jak se
-tam odtud dostat. Ceny a přesná pravidla obchodů se v čase mění — než začneš
-platit, ověř si aktuální podmínky přímo na developer.apple.com
-a play.google.com/console.
+**Aktuální stav (odzkoušeno, ne jen naplánováno):** varianta A níže je už
+rozjetá v [`../../mobile-app/`](../../mobile-app/) — skutečný Capacitor
+projekt s vygenerovaným Android Gradle projektem, který úspěšně proběhne
+přes `./gradlew tasks`. Chybí jediná věc: Android SDK (viz
+[`mobile-app/README.md`](../../mobile-app/README.md) pro přesný další
+krok). iOS jde odsud dál jen po instalaci na Macu — víc v tom README.
+
+Ceny a přesná pravidla obchodů se v čase mění — než začneš platit, ověř si
+aktuální podmínky přímo na developer.apple.com a play.google.com/console.
 
 ## Dvě reálné cesty
 

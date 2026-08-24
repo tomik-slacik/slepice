@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<title>Kvoč — uložit platební kartu (test)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://js.stripe.com/v3/"></script>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:440px;margin:40px auto;padding:0 16px;color:#241B14;}
+  h1{font-size:20px;}
+  p.note{color:#5B4A38;font-size:13px;line-height:1.5;}
+  label{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#5B4A38;margin:16px 0 4px;}
+  input{width:100%;padding:8px;border:1px solid #CDBB93;border-radius:4px;font-size:14px;box-sizing:border-box;}
+  button{margin-top:16px;padding:10px 16px;background:#C4471F;color:white;border:none;border-radius:4px;font-size:14px;cursor:pointer;}
+  button:disabled{opacity:.5;cursor:default;}
+  #payment-element{margin-top:16px;}
+  #message{margin-top:12px;font-size:13px;}
+  #message.error{color:#B00020;}
+  #message.success{color:#2E7D32;}
+</style>
+</head>
+<body>
+  <h1>Kvoč — uložit platební kartu</h1>
+  <p class="note">
+    Tohle je technická testovací stránka pro <code>/hens/{id}/wallet/setup-intent</code>,
+    ne finální appka. Funguje jen když je backend spuštěný s
+    <code>KVOC_PAYMENT_PROVIDER=stripe</code> a platnými Stripe klíči
+    (viz <code>docs/PAYMENT_INTEGRATION.md</code>) — s výchozím mock
+    poskytovatelem se karta neuloží doopravdy nikam.
+  </p>
+
+  <label for="api-base">Adresa backendu</label>
+  <input id="api-base" value="http://127.0.0.1:8000">
+
+  <label for="token">Přístupový token (z /auth/login)</label>
+  <input id="token" placeholder="eyJhbGci...">
+
+  <label for="hen-id">ID slepičky</label>
+  <input id="hen-id" placeholder="1">
+
+  <button id="start-btn">Načíst platební formulář</button>
+
+  <div id="payment-element"></div>
+  <button id="submit-btn" style="display:none;">Uložit kartu</button>
+  <div id="message"></div>
+
+<script>
+let stripe, elements;
+
+document.getElementById('start-btn').addEventListener('click', async () => {
+  const apiBase = document.getElementById('api-base').value.replace(/\/$/, '');
+  const token = document.getElementById('token').value.trim();
+  const henId = document.getElementById('hen-id').value.trim();
+  const msg = document.getElementById('message');
+  msg.textContent = '';
+  msg.className = '';
+
+  try {
+    const res = await fetch(`${apiBase}/hens/${henId}/wallet/setup-intent`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`${res.status}: ${body}`);
+    }
+    const { client_secret, publishable_key } = await res.json();
+
+    stripe = Stripe(publishable_key);
+    elements = stripe.elements({ clientSecret: client_secret });
+    const paymentElement = elements.create('payment');
+    paymentElement.mount('#payment-element');
+
+    document.getElementById('submit-btn').style.display = 'inline-block';
+  } catch (err) {
+    msg.textContent = 'Chyba při načítání formuláře: ' + err.message;
+    msg.className = 'error';
+  }
+});
+
+document.getElementById('submit-btn').addEventListener('click', async () => {
+  const msg = document.getElementById('message');
+  const { error } = await stripe.confirmSetup({
+    elements,
+    confirmParams: { return_url: window.location.href },
+    redirect: 'if_required',
+  });
+  if (error) {
+    msg.textContent = 'Chyba: ' + error.message;
+    msg.className = 'error';
+  } else {
+    msg.textContent = 'Karta uložena. Appka teď může strhávat dobití peněženky na pozadí.';
+    msg.className = 'success';
+  }
+});
+</script>
+</body>
+</html>

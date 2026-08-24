@@ -2,12 +2,14 @@
 kvoc-backend directory - they're meant to actually be run, not just read.
 
 Uses its own sqlite file (test_kvoc.db) so it never touches whatever
-database `python run.py` is using for real browsing.
+database `python run.py` is using for real browsing, and forces the mock
+payment provider so these tests never need real Stripe credentials.
 """
 import datetime as dt
 import os
 
 os.environ["KVOC_DATABASE_URL"] = "sqlite:///./test_kvoc.db"
+os.environ["KVOC_PAYMENT_PROVIDER"] = "mock"
 if os.path.exists("test_kvoc.db"):
     os.remove("test_kvoc.db")
 
@@ -16,11 +18,31 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
 
+_counter = {"n": 0}
+
 
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
         yield c
+
+
+def _new_user_headers(client, email=None):
+    """Register a fresh user and return Authorization headers for them.
+    Each call uses a unique email so tests don't collide with each other.
+    """
+    _counter["n"] += 1
+    email = email or f"test{_counter['n']}@example.com"
+    r = client.post("/auth/register", json={"email": email, "password": "correct horse battery staple"})
+    assert r.status_code == 201, r.text
+    token = r.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}, email
+
+
+def _adopt_hen(client, headers, daily_amount=20, farm_key="lipa"):
+    r = client.post("/hens", json={"hen_name": "Testovačka", "farm_key": farm_key, "daily_amount": daily_amount}, headers=headers)
+    assert r.status_code == 201, r.text
+    return r.json()
 
 
 def test_health(client):
@@ -36,25 +58,69 @@ def test_farms_are_seeded(client):
     assert {f["key"] for f in farms} == {"lipa", "dvur", "polana"}
 
 
+# ---------------------------- auth ----------------------------
+
+def test_register_login_and_me(client):
+    headers, email = _new_user_headers(client)
+
+    r = client.get("/auth/me", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["email"] == email
+    assert r.json()["has_saved_payment_method"] is False
+
+    r = client.post("/auth/login", data={"username": email, "password": "correct horse battery staple"})
+    assert r.status_code == 200
+    assert "access_token" in r.json()
+
+
+def test_login_wrong_password_rejected(client):
+    _, email = _new_user_headers(client)
+    r = client.post("/auth/login", data={"username": email, "password": "not the right password"})
+    assert r.status_code == 401
+
+
+def test_duplicate_registration_rejected(client):
+    _, email = _new_user_headers(client)
+    r = client.post("/auth/register", json={"email": email, "password": "another password entirely"})
+    assert r.status_code == 409
+
+
+def test_hens_endpoint_requires_auth(client):
+    r = client.post("/hens", json={"hen_name": "Bez tokenu", "farm_key": "lipa"})
+    assert r.status_code == 401
+
+
+def test_hen_ownership_is_isolated_between_users(client):
+    headers_a, _ = _new_user_headers(client)
+    headers_b, _ = _new_user_headers(client)
+    hen_a = _adopt_hen(client, headers_a)
+
+    # user B can't see or modify user A's hen - 404, not 403, so B can't
+    # even confirm the id exists
+    r = client.get(f"/hens/{hen_a['id']}", headers=headers_b)
+    assert r.status_code == 404
+    r = client.patch(f"/hens/{hen_a['id']}", json={"paused": True}, headers=headers_b)
+    assert r.status_code == 404
+
+    r = client.get(f"/hens/{hen_a['id']}", headers=headers_a)
+    assert r.status_code == 200
+
+
+# ---------------------------- hens / tick logic ----------------------------
+
 def test_unknown_farm_key_rejected(client):
-    r = client.post("/hens", json={"owner_name": "X", "farm_key": "does-not-exist"})
+    headers, _ = _new_user_headers(client)
+    r = client.post("/hens", json={"hen_name": "X", "farm_key": "does-not-exist"}, headers=headers)
     assert r.status_code == 404
 
 
 def test_adopt_hen_runs_day_one(client):
-    r = client.post("/hens", json={
-        "owner_name": "Test User",
-        "hen_name": "Testovačka",
-        "farm_key": "lipa",
-        "daily_amount": 20,
-        "address": "Testovací 1, Praha",
-    })
-    assert r.status_code == 201
-    hen = r.json()
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers, daily_amount=20)
     assert hen["hen_name"] == "Testovačka"
     assert hen["daily_amount"] == 20
 
-    r = client.get(f"/hens/{hen['id']}/feed-log")
+    r = client.get(f"/hens/{hen['id']}/feed-log", headers=headers)
     assert r.status_code == 200
     log = r.json()
     if dt.date.today().weekday() < 5:
@@ -65,8 +131,9 @@ def test_adopt_hen_runs_day_one(client):
 
 
 def test_full_week_produces_a_delivery(client):
-    r = client.post("/hens", json={"owner_name": "Weekly", "farm_key": "dvur", "daily_amount": 20})
-    hen_id = r.json()["id"]
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers, daily_amount=20, farm_key="dvur")
+    hen_id = hen["id"]
 
     # offsets 1..6 are guaranteed to reach the very next Friday regardless of
     # which weekday "today" happens to be when this test runs, and never far
@@ -75,7 +142,7 @@ def test_full_week_produces_a_delivery(client):
         rr = client.post(f"/admin/run-tick?days_offset={offset}")
         assert rr.status_code == 200
 
-    r = client.get(f"/hens/{hen_id}/deliveries")
+    r = client.get(f"/hens/{hen_id}/deliveries", headers=headers)
     assert r.status_code == 200
     deliveries = r.json()
     assert len(deliveries) == 1
@@ -94,16 +161,16 @@ def test_full_week_produces_a_delivery(client):
     assert d["eggs"] == max(1, round(d["amount"] / 12.5))
     assert d["status"] in ("transit", "delivered")
 
-    r = client.get(f"/hens/{hen_id}/wallet")
+    r = client.get(f"/hens/{hen_id}/wallet", headers=headers)
     assert r.status_code == 200
     assert r.json()["daily_amount"] == 20
 
 
 def test_settings_update(client):
-    r = client.post("/hens", json={"owner_name": "Settings", "farm_key": "polana"})
-    hen_id = r.json()["id"]
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers, farm_key="polana")
 
-    r = client.patch(f"/hens/{hen_id}", json={"daily_amount": 30, "paused": True})
+    r = client.patch(f"/hens/{hen['id']}", json={"daily_amount": 30, "paused": True}, headers=headers)
     assert r.status_code == 200
     updated = r.json()
     assert updated["daily_amount"] == 30
@@ -111,20 +178,54 @@ def test_settings_update(client):
 
 
 def test_pause_freezes_the_streak_instead_of_breaking_it(client):
-    r = client.post("/hens", json={"owner_name": "Pauser", "farm_key": "lipa"})
-    hen_id = r.json()["id"]
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers)
+    hen_id = hen["id"]
 
-    r = client.get(f"/hens/{hen_id}/wallet")
+    r = client.get(f"/hens/{hen_id}/wallet", headers=headers)
     streak_day0 = r.json()["streak"]
 
-    client.patch(f"/hens/{hen_id}", json={"paused": True})
+    client.patch(f"/hens/{hen_id}", json={"paused": True}, headers=headers)
     client.post("/admin/run-tick?days_offset=1")
     client.post("/admin/run-tick?days_offset=2")
-    client.patch(f"/hens/{hen_id}", json={"paused": False})
+    client.patch(f"/hens/{hen_id}", json={"paused": False}, headers=headers)
     client.post("/admin/run-tick?days_offset=3")
 
-    r = client.get(f"/hens/{hen_id}/wallet")
+    r = client.get(f"/hens/{hen_id}/wallet", headers=headers)
     streak_after = r.json()["streak"]
 
     # a pause must never make the streak worse than where it started
     assert streak_after >= streak_day0
+
+
+# ---------------------------- wallet (mock payment provider) ----------------------------
+
+def test_wallet_topup_flow_with_mock_provider(client):
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers)
+    hen_id = hen["id"]
+
+    r = client.post(f"/hens/{hen_id}/wallet/setup-intent", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["client_secret"]
+
+    r = client.get("/auth/me", headers=headers)
+    assert r.json()["has_saved_payment_method"] is True
+
+    r = client.post(f"/hens/{hen_id}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 201
+    topup = r.json()
+    assert topup["amount_czk"] == 100
+    assert topup["status"] == "succeeded"
+    assert topup["provider"] == "mock"
+
+    r = client.get(f"/hens/{hen_id}/wallet/topups", headers=headers)
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+
+
+def test_topup_without_saved_card_is_rejected(client):
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers)
+    r = client.post(f"/hens/{hen['id']}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 400

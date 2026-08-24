@@ -1,0 +1,19 @@
+# Local tooling downloaded because this machine can't run installers that
+# need admin rights (see mobile-app/README.md) - not meant to be committed,
+# and not needed if you have your own Node.js/JDK install.
+.tools/
+
+# npm
+node_modules/
+
+# Android/Gradle build output and machine-specific files - NOT the gradle
+# wrapper itself (gradlew, gradlew.bat, gradle/wrapper/*), which is meant
+# to be committed so anyone can build without installing Gradle first.
+mobile-app/android/local.properties
+mobile-app/android/**/build/
+mobile-app/android/.gradle/
+mobile-app/android/.idea/
+mobile-app/android/captures/
+*.apk
+*.aab
+*.keystore

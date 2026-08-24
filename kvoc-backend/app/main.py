@@ -7,9 +7,11 @@ Interactive API docs once it's running: http://127.0.0.1:8000/docs
 """
 import sys
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 # Windows terminals often default to a legacy codepage that mangles the
 # Czech diacritics in the demo notification text (e.g. "K�" instead of
@@ -24,7 +26,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 from . import models  # noqa: F401  (registers models on Base before init_db)
 from .database import SessionLocal, init_db
-from .routers import admin, farms, hens
+from .routers import admin, auth, farms, hens, wallet
 from .scheduler import start_scheduler, stop_scheduler
 from .seed import seed_farms
 
@@ -57,8 +59,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+
+app.include_router(auth.router)
 app.include_router(farms.router)
 app.include_router(hens.router)
+app.include_router(wallet.router)
 app.include_router(admin.router)
 
 

@@ -1,0 +1,8 @@
+{
+  "appId": "cz.kvoc.app",
+  "appName": "Kvoč",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  }
+}
