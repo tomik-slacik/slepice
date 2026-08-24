@@ -41,6 +41,24 @@ def me(current_user: models.User = Depends(get_current_user)):
     return out
 
 
+@router.post("/change-password", status_code=204)
+def change_password(
+    payload: schemas.ChangePasswordIn,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Requires the current password, same as any real account settings
+    page - there's no separate "forgot password" flow (that needs an email
+    provider to actually deliver a reset link, which is a bigger, separate
+    integration - see docs/DEPLOYMENT.md's env var table for what's already
+    configurable vs. not set up yet).
+    """
+    if not verify_password(payload.current_password, current_user.password_hash):
+        raise HTTPException(401, "current password is incorrect")
+    current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
+
+
 @router.post("/device-token", status_code=204)
 def register_device_token(
     payload: schemas.DeviceTokenIn,

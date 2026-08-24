@@ -238,6 +238,10 @@
   var actFilter = 'all';
   var stripeState = null;               // {stripe, elements} once a real Stripe form is mounted
 
+  // farm-finder (onboarding step 1) - transient, re-asked fresh each time
+  var geoStatus = 'idle';   // idle | asking | granted | denied | unsupported
+  var farmRadius = 'all';   // 'all' | 10 | 25 | 50 (km) - filtered client-side once farms[] has distance_km
+
   function loadToken(){ try{ return localStorage.getItem(TOKEN_KEY); }catch(e){ return null; } }
   function saveToken(t){ try{ if(t){ localStorage.setItem(TOKEN_KEY, t); } else { localStorage.removeItem(TOKEN_KEY); } }catch(e){} }
 
@@ -400,19 +404,83 @@
       '<div class="hint mono" style="text-align:center;">Backend musí běžet na stejné adrese, ze které je appka otevřená.</div>';
   }
 
+  // ============ farm-finder: real device location, real backend distances ============
+  // Same idea as the offline demo's requestLocation(), but the distance math
+  // happens server-side (GET /farms?lat=&lng=) since farms are real server
+  // data here, not a hardcoded client array - one source of truth for it.
+  function requestLocation(){
+    geoStatus = 'asking';
+    renderOnboarding();
+    var GeoPlugin = (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.Plugins)
+      ? Capacitor.Plugins.Geolocation : null;
+
+    function onOk(lat, lng){
+      api('/farms?lat='+encodeURIComponent(lat)+'&lng='+encodeURIComponent(lng)).then(function(f){
+        farms = f;
+        geoStatus = 'granted';
+        renderOnboarding();
+      }).catch(function(){ geoStatus = 'denied'; renderOnboarding(); });
+    }
+    function onErr(){ geoStatus = 'denied'; renderOnboarding(); }
+
+    if (GeoPlugin) {
+      GeoPlugin.checkPermissions().then(function(perm){
+        var already = perm && (perm.location === 'granted' || perm.coarseLocation === 'granted');
+        return already ? Promise.resolve() : GeoPlugin.requestPermissions();
+      }).then(function(){
+        return GeoPlugin.getCurrentPosition({enableHighAccuracy:false, timeout:10000});
+      }).then(function(pos){ onOk(pos.coords.latitude, pos.coords.longitude); }).catch(onErr);
+    } else if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function(pos){
+        onOk(pos.coords.latitude, pos.coords.longitude);
+      }, onErr, {enableHighAccuracy:false, timeout:10000});
+    } else {
+      geoStatus = 'unsupported';
+      renderOnboarding();
+    }
+  }
+  function farmsForPicker(){
+    if (farmRadius==='all' || geoStatus!=='granted') return farms;
+    return farms.filter(function(f){ return f.distance_km!=null && f.distance_km<=farmRadius; });
+  }
+
   // ============ render: onboarding ============
   function renderOnboarding(){
     var host = document.getElementById('view-onboarding');
     if(obStep===1){
-      var farmCards = farms.map(function(f){
+      var picked = farmsForPicker();
+      var farmCards = picked.length ? picked.map(function(f){
         var sel = draft.farmKey===f.key;
-        return '<div class="farm-card pressable" data-action="select-farm" data-farm="'+f.key+'" data-selected="'+sel+'">'+
-          '<div><div class="farm-name">'+escapeHtml(f.name)+'</div><div class="farm-meta">'+escapeHtml(f.description)+'</div></div>'+
+        var meta = f.distance_km!=null ? f.description+', '+f.distance_km+' km' : f.description;
+        var full = f.spots_left!=null && f.spots_left<=0;
+        if(f.spots_left!=null) meta += full ? ' · plno' : ' · '+f.spots_left+' volných míst';
+        return '<div class="farm-card pressable'+(full?' full':'')+'" data-action="'+(full?'noop':'select-farm')+'" data-farm="'+f.key+'" data-selected="'+sel+'" style="'+(full?'opacity:.5;':'')+'">'+
+          '<div><div class="farm-name">'+escapeHtml(f.name)+'</div><div class="farm-meta">'+escapeHtml(meta)+'</div></div>'+
           '<div class="check-circle">'+ICO.check+'</div></div>';
-      }).join('');
+      }).join('') : '<div class="empty-note">Žádná farma v tomhle okruhu — zkus širší okruh.</div>';
+
+      var geoBlock;
+      if(geoStatus==='granted'){
+        var radii = [['10',10],['25',25],['50',50],['Vše','all']];
+        var rpills = radii.map(function(r){
+          return '<div class="pill pressable" data-action="farm-radius" data-radius="'+r[1]+'" data-active="'+(farmRadius===r[1])+'">'+(r[1]==='all'?r[0]:r[0]+' km')+'</div>';
+        }).join('');
+        geoBlock = '<div><div class="field-label">Okruh od tebe</div><div class="pill-row">'+rpills+'</div></div>';
+      } else if(geoStatus==='asking'){
+        geoBlock = '<div class="center-mono">Zjišťuju polohu…</div>';
+      } else if(geoStatus==='denied'){
+        geoBlock = '<div class="hint mono" style="text-align:center;">Polohu se nepodařilo zjistit.</div>'+
+          '<div class="pressable" data-action="geo-request"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">Zkusit znovu</div></div>';
+      } else if(geoStatus==='unsupported'){
+        geoBlock = '<div class="hint mono" style="text-align:center;">Tenhle prohlížeč neumí zjistit polohu — vyber si farmu ručně.</div>';
+      } else {
+        geoBlock = '<div class="pressable" data-action="geo-request"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">📍 Najít farmy poblíž mě</div></div>';
+      }
+
       host.innerHTML =
         '<div class="topbar"><span class="pressable" data-action="logout">'+ICO.back+'</span><span class="app-eyebrow">Adopce</span><span class="mono" style="font-size:10.5px;color:var(--ink-soft);">Krok 1 z 2</span></div>'+
         '<div><div class="app-h1">Vyber farmu</div><div class="app-sub" style="margin-top:6px;">Slepička poroste u konkrétního farmáře — vždycky víš, odkud tvoje vejce jsou.</div></div>'+
+        geoBlock+
         '<div style="display:flex;flex-direction:column;gap:9px;">'+farmCards+'</div>'+
         '<div><div class="field-label">Pojmenuj svoji slepičku</div><input class="name-input" id="ob-name" type="text" value="'+escapeHtml(draft.henName)+'"></div>'+
         '<div style="flex:1;"></div>'+
@@ -787,6 +855,12 @@
 
     // --- onboarding ---
     else if(action==='select-farm'){ draft.farmKey = el.getAttribute('data-farm'); renderOnboarding(); }
+    else if(action==='geo-request'){ requestLocation(); }
+    else if(action==='farm-radius'){
+      var r = el.getAttribute('data-radius');
+      farmRadius = r==='all' ? 'all' : Number(r);
+      renderOnboarding();
+    }
     else if(action==='onb-next'){
       var nameEl = document.getElementById('ob-name');
       draft.henName = (nameEl && nameEl.value.trim()) || draft.henName || 'Nuška';

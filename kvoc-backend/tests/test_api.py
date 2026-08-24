@@ -88,7 +88,39 @@ def test_farms_are_seeded(client):
     r = client.get("/farms")
     assert r.status_code == 200
     farms = r.json()
-    assert {f["key"] for f in farms} == {"lipa", "dvur", "polana"}
+    assert {f["key"] for f in farms} == {
+        "lipa", "dvur", "polana", "ricany", "beroun", "kladno", "melnik", "kutnahora",
+    }
+    # every seeded farm has real coordinates - that's the whole point of it
+    # being seed data instead of a placeholder
+    assert all(f["lat"] is not None and f["lng"] is not None for f in farms)
+
+
+def test_farms_near_location_get_a_real_distance_and_are_sorted(client):
+    # roughly central Prague - Říčany (real town, ~19km out) should end up
+    # first, something far away (Kutná Hora, ~60km+) should end up last
+    r = client.get("/farms", params={"lat": 50.0755, "lng": 14.4378})
+    assert r.status_code == 200
+    farms = r.json()
+    assert all(f["distance_km"] is not None for f in farms)
+    distances = [f["distance_km"] for f in farms]
+    assert distances == sorted(distances)
+    assert farms[0]["key"] == "ricany"
+    assert 15 < farms[0]["distance_km"] < 25
+
+
+def test_farms_radius_filter_drops_farms_too_far_away(client):
+    r = client.get("/farms", params={"lat": 50.0755, "lng": 14.4378, "radius_km": 25})
+    assert r.status_code == 200
+    farms = r.json()
+    assert len(farms) < 8
+    assert all(f["distance_km"] <= 25 for f in farms)
+
+
+def test_farms_without_location_have_no_distance_and_keep_seed_order(client):
+    r = client.get("/farms")
+    farms = r.json()
+    assert all(f["distance_km"] is None for f in farms)
 
 
 # ---------------------------- auth ----------------------------
@@ -118,6 +150,34 @@ def test_duplicate_registration_rejected(client):
     assert r.status_code == 409
 
 
+def test_change_password_requires_correct_current_password(client):
+    headers, email = _new_user_headers(client)
+    r = client.post(
+        "/auth/change-password",
+        json={"current_password": "wrong one", "new_password": "brand new password 123"},
+        headers=headers,
+    )
+    assert r.status_code == 401
+    # old password still works - nothing was changed
+    r = client.post("/auth/login", data={"username": email, "password": "correct horse battery staple"})
+    assert r.status_code == 200
+
+
+def test_change_password_succeeds_and_old_password_stops_working(client):
+    headers, email = _new_user_headers(client)
+    r = client.post(
+        "/auth/change-password",
+        json={"current_password": "correct horse battery staple", "new_password": "brand new password 123"},
+        headers=headers,
+    )
+    assert r.status_code == 204
+
+    r = client.post("/auth/login", data={"username": email, "password": "correct horse battery staple"})
+    assert r.status_code == 401
+    r = client.post("/auth/login", data={"username": email, "password": "brand new password 123"})
+    assert r.status_code == 200
+
+
 def test_hens_endpoint_requires_auth(client):
     r = client.post("/hens", json={"hen_name": "Bez tokenu", "farm_key": "lipa"})
     assert r.status_code == 401
@@ -139,12 +199,82 @@ def test_hen_ownership_is_isolated_between_users(client):
     assert r.status_code == 200
 
 
+def test_cancel_hen_deletes_it_and_its_history(client):
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers)
+
+    r = client.delete(f"/hens/{hen['id']}", headers=headers)
+    assert r.status_code == 204
+
+    r = client.get(f"/hens/{hen['id']}", headers=headers)
+    assert r.status_code == 404
+    r = client.get("/hens", headers=headers)
+    assert hen["id"] not in [h["id"] for h in r.json()]
+
+
+def test_cancel_hen_is_isolated_between_users(client):
+    headers_a, _ = _new_user_headers(client)
+    headers_b, _ = _new_user_headers(client)
+    hen_a = _adopt_hen(client, headers_a)
+
+    r = client.delete(f"/hens/{hen_a['id']}", headers=headers_b)
+    assert r.status_code == 404
+
+    r = client.get(f"/hens/{hen_a['id']}", headers=headers_a)
+    assert r.status_code == 200  # untouched by B's attempt
+
+
 # ---------------------------- hens / tick logic ----------------------------
 
 def test_unknown_farm_key_rejected(client):
     headers, _ = _new_user_headers(client)
     r = client.post("/hens", json={"hen_name": "X", "farm_key": "does-not-exist"}, headers=headers)
     assert r.status_code == 404
+
+
+def test_farm_at_capacity_refuses_new_adoptions(client):
+    from app import models
+    from app.database import SessionLocal
+
+    # shrink a real farm's capacity to something a test can actually fill,
+    # rather than adopting 25+ real hens just to hit the seeded number
+    db = SessionLocal()
+    try:
+        farm = db.query(models.Farm).filter(models.Farm.key == "beroun").first()
+        farm.weekly_capacity = 1
+        db.commit()
+    finally:
+        db.close()
+
+    headers_a, _ = _new_user_headers(client)
+    r = client.post("/hens", json={"hen_name": "První", "farm_key": "beroun"}, headers=headers_a)
+    assert r.status_code == 201
+
+    headers_b, _ = _new_user_headers(client)
+    r = client.post("/hens", json={"hen_name": "Druhá", "farm_key": "beroun"}, headers=headers_b)
+    assert r.status_code == 409
+
+    # cancelling the first frees the spot back up for someone else
+    first_id = client.get("/hens", headers=headers_a).json()[0]["id"]
+    client.delete(f"/hens/{first_id}", headers=headers_a)
+    r = client.post("/hens", json={"hen_name": "Druhá", "farm_key": "beroun"}, headers=headers_b)
+    assert r.status_code == 201
+
+
+def test_farms_report_spots_left(client):
+    # kutnahora is never adopted from anywhere else in this file - a real
+    # baseline to assert against, unlike lipa/dvur/polana/beroun which other
+    # tests (including the capacity test right above this one) also use
+    r = client.get("/farms")
+    farms = {f["key"]: f for f in r.json()}
+    assert farms["kutnahora"]["weekly_capacity"] == 25
+    assert farms["kutnahora"]["spots_left"] == 25
+
+    headers, _ = _new_user_headers(client)
+    client.post("/hens", json={"hen_name": "X", "farm_key": "kutnahora"}, headers=headers)
+    r = client.get("/farms")
+    farms = {f["key"]: f for f in r.json()}
+    assert farms["kutnahora"]["spots_left"] == 24
 
 
 def test_adopt_hen_runs_day_one(client):

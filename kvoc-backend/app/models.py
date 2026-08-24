@@ -1,6 +1,6 @@
 import datetime as dt
 
-from sqlalchemy import Boolean, Column, Date, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
 from .database import Base
@@ -37,6 +37,20 @@ class Farm(Base):
     key = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=False)
     description = Column(String, nullable=False, default="")
+
+    # Real town-center coordinates (demo-grade precision) for the "find
+    # farms near me" feature - see GET /farms?lat=&lng=&radius_km=. Nullable
+    # so a farm added without them just never gets a distance, rather than
+    # breaking the listing for everyone else.
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
+
+    # A farm can only actually gather/deliver so many eggs a week - without
+    # some cap, nothing stops an unlimited number of customers picking the
+    # same small farm. Null = not tracked / unlimited (fine for a farm that
+    # hasn't told us its real capacity yet). See routers/hens.py's
+    # adopt_hen() and docs/LOGISTICS.md.
+    weekly_capacity = Column(Integer, nullable=True)
 
     hens = relationship("Hen", back_populates="farm")
 

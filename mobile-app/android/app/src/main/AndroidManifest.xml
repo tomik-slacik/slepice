@@ -38,4 +38,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- @capacitor/geolocation doesn't declare these itself (checked its own
+         AAR manifest - it's empty) - the app has to ask for them. COARSE is
+         enough for "which nearby farm", FINE is requested too since the
+         plugin's getCurrentPosition() call can use it for a tighter fix. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 </manifest>

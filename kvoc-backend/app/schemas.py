@@ -24,6 +24,11 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
+class ChangePasswordIn(BaseModel):
+    current_password: str = Field(..., min_length=1, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200)
+
+
 class DeviceTokenIn(BaseModel):
     # The FCM registration token the mobile app gets back from
     # PushNotifications.register() (see mobile-app's push-notifications.js).
@@ -38,6 +43,19 @@ class FarmOut(BaseModel):
     key: str
     name: str
     description: str
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    # only populated when GET /farms was called with lat/lng - see
+    # routers/farms.py. None just means "we don't know", not "far away".
+    distance_km: Optional[float] = None
+    weekly_capacity: Optional[int] = None
+    # None when weekly_capacity itself is None (unlimited/not tracked) -
+    # otherwise weekly_capacity minus how many hens are already there. Can't
+    # go negative from here (adopt_hen() in routers/hens.py refuses once
+    # it hits 0), but a farm that later *lowers* its capacity below its
+    # current headcount would show a negative number on purpose - that's a
+    # real "this farm is over capacity" signal, not a bug to hide.
+    spots_left: Optional[int] = None
 
 
 class HenCreate(BaseModel):

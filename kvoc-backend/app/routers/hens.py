@@ -31,6 +31,8 @@ def adopt_hen(
     farm = db.query(models.Farm).filter(models.Farm.key == payload.farm_key).first()
     if farm is None:
         raise HTTPException(404, f"unknown farm_key '{payload.farm_key}'")
+    if farm.weekly_capacity is not None and len(farm.hens) >= farm.weekly_capacity:
+        raise HTTPException(409, f"'{farm.name}' has no free capacity this week - try another farm")
 
     hen = models.Hen(
         user_id=current_user.id,
@@ -73,6 +75,20 @@ def update_hen(
     db.commit()
     db.refresh(hen)
     return hen
+
+
+@router.delete("/{hen_id}", status_code=204)
+def cancel_hen(hen_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Cancels the subscription outright - a hard delete, not a "paused"
+    flag flip (that already exists via PATCH .../paused). Cascades to the
+    hen's feed log, deliveries and paused-day records (see the
+    cascade="all, delete-orphan" relationships on Hen in models.py) - there
+    is no separate wallet ledger to refund here, since Kvoč never holds a
+    real prepaid balance (see docs/PAYMENT_INTEGRATION.md).
+    """
+    hen = _get_owned_hen(hen_id, current_user, db)
+    db.delete(hen)
+    db.commit()
 
 
 @router.get("/{hen_id}/wallet", response_model=schemas.WalletOut)

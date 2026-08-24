@@ -246,11 +246,35 @@
 
   // ============ constants ============
   var STORAGE_KEY = 'kvoc_app_state_v2';
+  // real approximate town-center coordinates (demo-grade precision - fine
+  // for "roughly how many km away", not a survey). Farms themselves are
+  // still made up for this demo - see onboarding's location note - but the
+  // distance math against them is real.
+  // capacity is illustrative for this demo (no real backend booking against
+  // it) - same numbers as kvoc-backend/app/seed.py so the two stay honest
+  // twins of each other, not just coincidentally similar
   var FARMS = [
-    {key:'lipa', name:'Farma U Lípy', meta:'volný výběh · Sázava, 18 km'},
-    {key:'dvur', name:'Dvůr Na Kopci', meta:'bio chov · Benešov, 24 km'},
-    {key:'polana', name:'Polana Farm', meta:'volný výběh · Neveklov, 9 km'}
+    {key:'lipa',      name:'Farma U Lípy',      style:'volný výběh', town:'Sázava',      lat:49.8564, lng:14.8636, capacity:60},
+    {key:'dvur',      name:'Dvůr Na Kopci',     style:'bio chov',    town:'Benešov',     lat:49.7847, lng:14.6873, capacity:40},
+    {key:'polana',    name:'Polana Farm',       style:'volný výběh', town:'Neveklov',    lat:49.7994, lng:14.5589, capacity:80},
+    {key:'ricany',    name:'Zahrada Pod Lesem', style:'bio chov',    town:'Říčany',      lat:49.9917, lng:14.6650, capacity:30},
+    {key:'beroun',    name:'Farma Beránek',     style:'volný výběh', town:'Beroun',      lat:49.9639, lng:14.0725, capacity:50},
+    {key:'kladno',    name:'Dvůr U Rybníka',    style:'bio chov',    town:'Kladno',      lat:50.1477, lng:14.1030, capacity:35},
+    {key:'melnik',    name:'Vinný Dvůr',        style:'volný výběh', town:'Mělník',      lat:50.3520, lng:14.4739, capacity:45},
+    {key:'kutnahora', name:'Stříbrná Farma',    style:'bio chov',    town:'Kutná Hora',  lat:49.9481, lng:15.2683, capacity:25}
   ];
+  function farmMeta(f, distanceKm){
+    var loc = distanceKm==null ? f.town : f.town+', '+distanceKm+' km';
+    return f.style+' · '+loc+' · '+f.capacity+' volných míst';
+  }
+  // Haversine - distance in km between two lat/lng points
+  function distanceKm(lat1, lng1, lat2, lng2){
+    var R = 6371, toRad = Math.PI/180;
+    var dLat = (lat2-lat1)*toRad, dLng = (lng2-lng1)*toRad;
+    var a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+      Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return Math.round(R * 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+  }
   var FEED_MESSAGES = [
     'dostala ranní zrníčko.',
     'se napila studánkové vody.',
@@ -314,6 +338,12 @@
   var selDay = null;
   var actFilter = 'all';
 
+  // farm-finder (onboarding step 1) - transient, never persisted, re-asked
+  // fresh every time onboarding opens
+  var geoStatus = 'idle';   // idle | asking | granted | denied | unsupported
+  var userLoc = null;       // {lat, lng} once granted
+  var farmRadius = 'all';   // 'all' | 10 | 25 | 50 (km)
+
   // gift voucher - transient, not tied to any one hen, never persisted
   var giftOpen = false;
   var giftGenerated = false;
@@ -350,7 +380,56 @@
     return days[d.getDay()]+' '+d.getDate()+'.'+(d.getMonth()+1)+'.';
   }
   function eggsPreview(amount){ return Math.max(1, Math.round(amount*5/12.5)); }
-  function farmName(key){ var f=FARMS.filter(function(x){return x.key===key;})[0]; return f? f.name+' · '+f.meta.split('·')[0].trim() : ''; }
+  function farmName(key){ var f=FARMS.filter(function(x){return x.key===key;})[0]; return f? f.name+' · '+f.style : ''; }
+
+  // ============ farm-finder: real device location, real distance math ============
+  // Prefers the native Capacitor Geolocation plugin when running in the
+  // wrapped app (proper Android permission dialog, more reliable than a
+  // bare WebView geolocation call) - falls back to the standard browser
+  // API everywhere else (this same file also runs as a plain page on
+  // GitHub Pages, with no native plugin present at all).
+  function requestLocation(){
+    geoStatus = 'asking';
+    renderOnboarding();
+    var GeoPlugin = (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.Plugins)
+      ? Capacitor.Plugins.Geolocation : null;
+
+    function onOk(lat, lng){ userLoc = {lat:lat, lng:lng}; geoStatus = 'granted'; renderOnboarding(); }
+    function onErr(){ geoStatus = 'denied'; renderOnboarding(); }
+
+    if (GeoPlugin) {
+      GeoPlugin.checkPermissions().then(function(perm){
+        var already = perm && (perm.location === 'granted' || perm.coarseLocation === 'granted');
+        return already ? Promise.resolve() : GeoPlugin.requestPermissions();
+      }).then(function(){
+        return GeoPlugin.getCurrentPosition({enableHighAccuracy:false, timeout:10000});
+      }).then(function(pos){
+        onOk(pos.coords.latitude, pos.coords.longitude);
+      }).catch(onErr);
+    } else if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function(pos){
+        onOk(pos.coords.latitude, pos.coords.longitude);
+      }, onErr, {enableHighAccuracy:false, timeout:10000});
+    } else {
+      geoStatus = 'unsupported';
+      renderOnboarding();
+    }
+  }
+
+  // farms sorted by distance (if we have a location) and narrowed to the
+  // chosen radius; distance is null (and order stays as authored) until
+  // requestLocation() actually succeeds
+  function farmsForPicker(){
+    var withDist = FARMS.map(function(f){
+      var d = userLoc ? distanceKm(userLoc.lat, userLoc.lng, f.lat, f.lng) : null;
+      return {farm:f, dist:d};
+    });
+    if (userLoc) {
+      withDist.sort(function(a,b){ return a.dist - b.dist; });
+      if (farmRadius !== 'all') withDist = withDist.filter(function(x){ return x.dist <= farmRadius; });
+    }
+    return withDist;
+  }
 
   // ============ business logic (per hen) ============
   function tickHen(hen, today){
@@ -719,18 +798,40 @@
   function renderOnboarding(){
     var host = document.getElementById('view-onboarding');
     if(obStep===1){
-      var farmCards = FARMS.map(function(f){
+      var picked = farmsForPicker();
+      var farmCards = picked.length ? picked.map(function(x){
+        var f = x.farm;
         var sel = obDraft.farm===f.key;
         return '<div class="farm-card pressable" data-action="select-farm" data-farm="'+f.key+'" data-selected="'+sel+'">'+
-          '<div><div class="farm-name">'+escapeHtml(f.name)+'</div><div class="farm-meta">'+escapeHtml(f.meta)+'</div></div>'+
+          '<div><div class="farm-name">'+escapeHtml(f.name)+'</div><div class="farm-meta">'+escapeHtml(farmMeta(f, x.dist))+'</div></div>'+
           '<div class="check-circle">'+ICO.check+'</div></div>';
-      }).join('');
+      }).join('') : '<div class="empty-note">Žádná farma v tomhle okruhu — zkus širší okruh.</div>';
+
+      var geoBlock;
+      if(geoStatus==='granted'){
+        var radii = [['10',10],['25',25],['50',50],['Vše','all']];
+        var pills = radii.map(function(r){
+          return '<div class="pill pressable" data-action="farm-radius" data-radius="'+r[1]+'" data-active="'+(farmRadius===r[1])+'">'+(r[1]==='all'?r[0]:r[0]+' km')+'</div>';
+        }).join('');
+        geoBlock = '<div><div class="field-label">Okruh od tebe</div><div class="pill-row">'+pills+'</div></div>';
+      } else if(geoStatus==='asking'){
+        geoBlock = '<div class="center-mono">Zjišťuju polohu…</div>';
+      } else if(geoStatus==='denied'){
+        geoBlock = '<div class="hint mono" style="text-align:center;">Polohu se nepodařilo zjistit.</div>'+
+          '<div class="pressable" data-action="geo-request"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">Zkusit znovu</div></div>';
+      } else if(geoStatus==='unsupported'){
+        geoBlock = '<div class="hint mono" style="text-align:center;">Tenhle prohlížeč neumí zjistit polohu — vyber si farmu ručně.</div>';
+      } else {
+        geoBlock = '<div class="pressable" data-action="geo-request"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">📍 Najít farmy poblíž mě</div></div>';
+      }
+
       var backSlot = obMode==='add'
         ? '<span class="pressable" data-action="onb-cancel">'+ICO.back+'</span>'
         : '<span></span>';
       host.innerHTML =
         '<div class="topbar">'+backSlot+'<span class="app-eyebrow">'+(obMode==='add'?'Nová slepička':'Adopce')+'</span><span class="mono" style="font-size:10.5px;color:var(--ink-soft);">Krok 1 z 2</span></div>'+
-        '<div><div class="app-h1">Vyber farmu</div><div class="app-sub" style="margin-top:6px;">Slepička poroste u konkrétního farmáře — vždycky víš, odkud tvoje vejce jsou.</div></div>'+
+        '<div><div class="app-h1">Vyber farmu</div><div class="app-sub" style="margin-top:6px;">Slepička poroste u konkrétního farmáře — vždycky víš, odkud tvoje vejce jsou. Tohle je demo appka, farmy jsou zatím vymyšlené — vzdálenost k nim ale appka počítá doopravdy z tvojí polohy.</div></div>'+
+        geoBlock+
         '<div style="display:flex;flex-direction:column;gap:9px;">'+farmCards+'</div>'+
         '<div><div class="field-label">Pojmenuj svoji slepičku</div><input class="name-input" id="ob-name" type="text" value="'+escapeHtml(obDraft.henName)+'"></div>'+
         '<div style="flex:1;"></div>'+
@@ -985,6 +1086,12 @@
     var action = el.getAttribute('data-action');
 
     if(action==='select-farm'){ obDraft.farm = el.getAttribute('data-farm'); renderOnboarding(); }
+    else if(action==='geo-request'){ requestLocation(); }
+    else if(action==='farm-radius'){
+      var r = el.getAttribute('data-radius');
+      farmRadius = r==='all' ? 'all' : Number(r);
+      renderOnboarding();
+    }
     else if(action==='onb-next'){
       var nameEl = document.getElementById('ob-name');
       obDraft.henName = (nameEl && nameEl.value.trim()) || obDraft.henName || 'Nuška';
