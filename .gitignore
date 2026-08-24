@@ -17,3 +17,13 @@ mobile-app/android/captures/
 *.apk
 *.aab
 *.keystore
+*.jks
+mobile-app/android/key.properties
+
+# iOS - same idea as the Android keystore above: signing material never
+# belongs in git. The ios/ project itself (Xcode project files) is committed;
+# mobile-app/ios/.gitignore (Capacitor's own template) handles Pods/build
+# output within that folder.
+*.ipa
+*.p12
+*.mobileprovision
