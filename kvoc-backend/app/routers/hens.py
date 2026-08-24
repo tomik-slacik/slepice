@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from ..auth import get_current_user
 from ..database import get_db
-from ..tick import compute_streak, compute_week_balance, run_tick_for_hen
+from ..tick import compute_streak, compute_week_balance, effective_today_for_hen, run_tick_for_hen
 
 router = APIRouter(prefix="/hens", tags=["hens"])
 
@@ -78,10 +78,11 @@ def update_hen(
 @router.get("/{hen_id}/wallet", response_model=schemas.WalletOut)
 def get_wallet(hen_id: int, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     hen = _get_owned_hen(hen_id, current_user, db)
+    today = effective_today_for_hen(db, hen)
     return schemas.WalletOut(
         daily_amount=hen.daily_amount,
-        week_balance=compute_week_balance(db, hen),
-        streak=compute_streak(db, hen),
+        week_balance=compute_week_balance(db, hen, today),
+        streak=compute_streak(db, hen, today),
     )
 
 

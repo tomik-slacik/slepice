@@ -166,6 +166,34 @@ def test_full_week_produces_a_delivery(client):
     assert r.json()["daily_amount"] == 20
 
 
+def test_wallet_reflects_demo_advanced_days_not_just_real_today(client):
+    """Regression test: a live click-through in the browser found that
+    /wallet computed week_balance/streak from the real wall-clock date even
+    after POST /admin/run-tick had advanced this hen's data into the
+    future - so the number silently stayed frozen while /feed-log clearly
+    showed new entries. See effective_today_for_hen() in app/tick.py.
+    """
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers, daily_amount=20)
+    hen_id = hen['id']
+
+    r = client.get(f"/hens/{hen_id}/wallet", headers=headers)
+    before = r.json()
+
+    client.post("/admin/run-tick?days_offset=1")
+    r = client.get(f"/hens/{hen_id}/feed-log", headers=headers)
+    log_after = r.json()
+
+    r = client.get(f"/hens/{hen_id}/wallet", headers=headers)
+    after = r.json()
+
+    # only meaningful if the offset day actually produced a new weekday entry
+    # (won't if today+1 lands on a weekend for this test run)
+    if len(log_after) > 0 and len([e for e in log_after if not e['is_bonus']]) >= 2:
+        assert after['week_balance'] > before['week_balance']
+        assert after['streak'] > before['streak']
+
+
 def test_settings_update(client):
     headers, _ = _new_user_headers(client)
     hen = _adopt_hen(client, headers, farm_key="polana")

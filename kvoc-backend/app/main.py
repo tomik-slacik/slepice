@@ -60,6 +60,7 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+app.mount("/app", StaticFiles(directory=Path(__file__).parent / "webapp", html=True), name="webapp")
 
 app.include_router(auth.router)
 app.include_router(farms.router)

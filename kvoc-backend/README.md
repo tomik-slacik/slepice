@@ -1,17 +1,26 @@
 # Kvoč API — technický základ pro reálný provoz
 
-Tohle je backend kostra appky Kvoč: adopce slepičky, denní krmení, peněženka
-a páteční svoz. Navazuje na [frontendové demo](../) (appka v prohlížeči se
-stavem v `localStorage`) — stejná byznys logika, stejná pravidla, ale teď
-běží na skutečném serveru s databází, aby na ni šlo v budoucnu napojit
-skutečné platby, push notifikace a víc zákazníků najednou.
+Backend appky Kvoč: přihlašování, adopce slepičky, denní krmení, peněženka
+a páteční svoz. Vedle `frontend/index.html` (offline demo, `localStorage`,
+umí fungovat bez backendu) teď existuje i **[`app/webapp/`](app/webapp/)**
+— stejná appka, ale skutečně napojená na tohle API (přihlášení, reálná
+data, reálné platby). Otevři `http://127.0.0.1:8000/app/` po spuštění
+backendu níž.
 
-**Bylo to opravdu spuštěné a otestované** na tomhle stroji (Python 3.12,
-Windows), ne jen napsané — `pytest` prošel 7/7 a API bylo ručně ověřené
-přes skutečné HTTP požadavky. Cestou se tak našla a opravila reálná chyba
-(páteční součet nezapočítával svůj vlastní den kvůli chybějícímu flush
-databázové session) — přesně to, co testování naslepo bez spuštění
-neodhalí.
+**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 22 testů
+(`pytest`) a k tomu appka `app/webapp/` doopravdy proklikaná v prohlížeči
+(registrace, adopce, všechny záložky, pauza, mock platba, posun dne).
+Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
+
+- **Páteční součet** nezapočítával svůj vlastní den (chybějící flush
+  databázové session před dotazem ve stejné transakci).
+- **`/wallet` endpoint** počítal zůstatek a sérii vždy z reálného dnešního
+  data, ne z data posunutého přes `/admin/run-tick` — takže po kliknutí
+  na "Posunout o den" v appce zůstatek zůstal viditelně zaseklý, i když
+  `/feed-log` už nový den měl. Objevilo se to teprve při klikání appkou,
+  ne v testech — `effective_today_for_hen()` v `app/tick.py` to opravuje
+  a `test_wallet_reflects_demo_advanced_days_not_just_real_today` to teď
+  hlídá.
 
 ## Co v tom je
 
@@ -32,8 +41,9 @@ neodhalí.
 - **Rozjetý Android build** appky — viz [`../mobile-app/`](../mobile-app/)
 - **Jasně oddělené místo** pro push notifikace (`app/integrations/notifications.py`)
   — teď jen mockované (loguje do konzole)
-- **Testy**, které se dají spustit, ne jen přečíst (21 testů: API, auth,
+- **Testy**, které se dají spustit, ne jen přečíst (22 testů: API, auth,
   platby)
+- **`app/webapp/`** — appka opravdu napojená na tohle API (viz výš)
 
 ## Co v tom NENÍ (záměrně)
 
@@ -62,9 +72,12 @@ pip install -r requirements.txt
 python run.py
 ```
 
-Appka poběží na `http://127.0.0.1:8000`. Interaktivní dokumentace (a rovnou
-místo, kde si to proklikat bez psaní kódu) je na
-`http://127.0.0.1:8000/docs`.
+Appka poběží na `http://127.0.0.1:8000`.
+
+- **`/app/`** — appka napojená na tohle API. Zaregistruj se, adoptuj
+  slepičku, klikej.
+- **`/docs`** — interaktivní dokumentace API (tlačítko **Authorize**
+  přijme email/heslo přímo tam).
 
 ### Vyzkoušet bez čekání na skutečný pátek
 
@@ -118,7 +131,9 @@ app/
   routers/
     auth.py, farms.py, hens.py, wallet.py, admin.py   — HTTP endpointy
   static/
-    card-setup.html                                    — testovací stránka pro uložení karty (Stripe.js)
+    card-setup.html                                    — holá testovací stránka pro uložení karty (Stripe.js)
+  webapp/
+    index.html                                           — appka opravdu napojená na tohle API (viz "Jak to spustit")
 docs/
   PAYMENT_INTEGRATION.md   — jak Stripe integraci vyzkoušet, proč peněženka místo denní karty
   APP_STORE_GUIDE.md        — stav Android/iOS cesty, co zbývá

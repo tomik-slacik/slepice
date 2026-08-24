@@ -11,6 +11,7 @@ import datetime as dt
 import random
 from typing import Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from . import config
@@ -104,6 +105,32 @@ def run_tick_for_hen(db: Session, hen: Hen, today: dt.date) -> None:
         notifier.send(hen.id, "DORUČENO", f"{last_delivery.eggs} vajec právě dorazilo ke dveřím.")
 
     db.commit()
+
+
+def effective_today_for_hen(db: Session, hen: Hen) -> dt.date:
+    """The date to treat as "today" when computing this hen's wallet/streak
+    for display.
+
+    Normally just the real date - but POST /admin/run-tick (see
+    app/routers/admin.py) can advance a hen's data into the future for
+    demo/testing purposes without any server-wide "current date" changing.
+    Without this, a demo-advanced hen's balance and streak would silently
+    stay frozen at whatever the real day's numbers were, even though new
+    feed-log entries keep appearing - exactly the mismatch a live click
+    through the UI caught (week_balance/streak stuck after "Posunout o den"
+    while /feed-log clearly showed a new entry). So: if the latest date we
+    actually have data for is further ahead than the real date, that later
+    date is "today" for this hen.
+    """
+    real_today = dt.date.today()
+    latest = (
+        db.query(func.max(FeedLogEntry.date))
+        .filter(FeedLogEntry.hen_id == hen.id)
+        .scalar()
+    )
+    if latest and latest > real_today:
+        return latest
+    return real_today
 
 
 def run_tick_for_all(db: Session, today: Optional[dt.date] = None) -> int:
