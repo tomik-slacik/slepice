@@ -1,0 +1,35 @@
+name: Backend tests
+
+# Runs the 40-test suite in kvoc-backend/tests on every push/PR that touches
+# it - so "the tests pass" is something GitHub checks automatically instead
+# of something that was only ever true on one machine, once, when someone
+# happened to run pytest by hand.
+on:
+  push:
+    paths:
+      - "kvoc-backend/**"
+      - ".github/workflows/backend-tests.yml"
+  pull_request:
+    paths:
+      - "kvoc-backend/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: kvoc-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: kvoc-backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest -v

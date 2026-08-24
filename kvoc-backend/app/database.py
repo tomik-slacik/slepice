@@ -43,9 +43,13 @@ def _add_missing_columns() -> None:
     existing_tables = set(inspector.get_table_names())
     wanted = [
         ("users", "fcm_token", "VARCHAR"),
+        ("users", "reset_token", "VARCHAR"),
+        ("users", "reset_token_expires", "DATETIME"),
+        ("users", "is_admin", "BOOLEAN DEFAULT 0"),
         ("farms", "lat", "FLOAT"),
         ("farms", "lng", "FLOAT"),
         ("farms", "weekly_capacity", "INTEGER"),
+        ("hens", "paused_reason", "VARCHAR"),
     ]
     for table, column, sql_type in wanted:
         if table not in existing_tables:

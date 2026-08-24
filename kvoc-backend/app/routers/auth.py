@@ -1,10 +1,22 @@
+import datetime as dt
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
-from ..auth import create_access_token, get_current_user, hash_password, verify_password
+from .. import config, models, schemas
+from ..auth import (
+    check_login_not_locked_out,
+    clear_failed_logins,
+    create_access_token,
+    generate_reset_token,
+    get_current_user,
+    hash_password,
+    record_failed_login,
+    verify_password,
+)
 from ..database import get_db
+from ..integrations.email import get_email_provider
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -19,6 +31,12 @@ def register(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    get_email_provider().send(
+        user.email, "Vítej v Kvoč",
+        "Ahoj!\n\nTvůj účet je založený. Teď stačí adoptovat slepičku a v pátek "
+        "dorazí první vejce.\n\nKvoč",
+    )
     return schemas.TokenOut(access_token=create_access_token(user.id))
 
 
@@ -28,9 +46,15 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get
     so the auto-generated /docs page's "Authorize" button works out of the
     box - `username` here is the user's email.
     """
-    user = db.query(models.User).filter(models.User.email == form.username.lower()).first()
+    email = form.username.lower()
+    check_login_not_locked_out(email)  # raises 429 if too many recent failures
+
+    user = db.query(models.User).filter(models.User.email == email).first()
     if user is None or not verify_password(form.password, user.password_hash):
+        record_failed_login(email)
         raise HTTPException(401, "incorrect email or password")
+
+    clear_failed_logins(email)
     return schemas.TokenOut(access_token=create_access_token(user.id))
 
 
@@ -41,21 +65,81 @@ def me(current_user: models.User = Depends(get_current_user)):
     return out
 
 
+@router.delete("/me", status_code=204)
+def delete_account(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Deletes the account and everything under it (hens, feed log,
+    deliveries - see the cascade="all, delete-orphan" relationships in
+    models.py). Doesn't cancel a real Stripe subscription/saved card by
+    itself - Kvoč never holds a recurring Stripe subscription object (see
+    docs/PAYMENT_INTEGRATION.md, the wallet-topup model), so there is
+    nothing on Stripe's side left running once this returns; a saved card
+    (PaymentMethod) is simply orphaned on Stripe, not charged again.
+    """
+    db.delete(current_user)
+    db.commit()
+
+
 @router.post("/change-password", status_code=204)
 def change_password(
     payload: schemas.ChangePasswordIn,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    """Requires the current password, same as any real account settings
-    page - there's no separate "forgot password" flow (that needs an email
-    provider to actually deliver a reset link, which is a bigger, separate
-    integration - see docs/DEPLOYMENT.md's env var table for what's already
-    configurable vs. not set up yet).
+    """For someone already logged in and who remembers their current
+    password. Forgotten password -> POST /auth/forgot-password instead.
     """
     if not verify_password(payload.current_password, current_user.password_hash):
         raise HTTPException(401, "current password is incorrect")
     current_user.password_hash = hash_password(payload.new_password)
+    db.commit()
+
+
+@router.post("/forgot-password", status_code=204)
+def forgot_password(payload: schemas.ForgotPasswordIn, db: Session = Depends(get_db)):
+    """Always returns 204 whether or not that email has an account -
+    otherwise this endpoint would let anyone check which emails are
+    registered. If it does exist, emails a one-time link valid for
+    config.PASSWORD_RESET_EXPIRE_MINUTES.
+    """
+    user = db.query(models.User).filter(models.User.email == payload.email.lower()).first()
+    if user is not None:
+        token = generate_reset_token()
+        user.reset_token = token
+        user.reset_token_expires = dt.datetime.now(dt.timezone.utc) + dt.timedelta(
+            minutes=config.PASSWORD_RESET_EXPIRE_MINUTES
+        )
+        db.commit()
+        reset_link = f"{config.PASSWORD_RESET_URL_BASE}?reset_token={token}"
+        get_email_provider().send(
+            user.email, "Obnovení hesla v Kvoč",
+            "Ahoj,\n\nněkdo (doufejme ty) požádal o obnovení hesla. Odkaz platí "
+            f"{config.PASSWORD_RESET_EXPIRE_MINUTES} minut:\n\n{reset_link}\n\n"
+            "Pokud jsi o obnovení nežádal/a, nic se neděje - stačí tenhle e-mail ignorovat.\n\nKvoč",
+        )
+
+
+@router.post("/reset-password", status_code=204)
+def reset_password(payload: schemas.ResetPasswordIn, db: Session = Depends(get_db)):
+    user = (
+        db.query(models.User)
+        .filter(models.User.reset_token == payload.reset_token)
+        .first()
+    )
+    now = dt.datetime.now(dt.timezone.utc)
+    valid = (
+        user is not None
+        and user.reset_token_expires is not None
+        and user.reset_token_expires.replace(tzinfo=dt.timezone.utc) > now
+    )
+    if not valid:
+        raise HTTPException(400, "reset link is invalid or expired - request a new one")
+
+    user.password_hash = hash_password(payload.new_password)
+    user.reset_token = None
+    user.reset_token_expires = None
     db.commit()
 
 

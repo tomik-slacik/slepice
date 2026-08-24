@@ -10,6 +10,7 @@ import os
 
 os.environ["KVOC_DATABASE_URL"] = "sqlite:///./test_kvoc.db"
 os.environ["KVOC_PAYMENT_PROVIDER"] = "mock"
+os.environ["KVOC_ADMIN_TOKEN"] = "test-admin-token"
 if os.path.exists("test_kvoc.db"):
     os.remove("test_kvoc.db")
 
@@ -17,6 +18,8 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.main import app  # noqa: E402
+
+ADMIN_HEADERS = {"X-Admin-Token": "test-admin-token"}
 
 _counter = {"n": 0}
 
@@ -302,7 +305,7 @@ def test_full_week_produces_a_delivery(client):
     # which weekday "today" happens to be when this test runs, and never far
     # enough to reach a *second* Friday
     for offset in range(1, 7):
-        rr = client.post(f"/admin/run-tick?days_offset={offset}")
+        rr = client.post(f"/admin/run-tick?days_offset={offset}", headers=ADMIN_HEADERS)
         assert rr.status_code == 200
 
     r = client.get(f"/hens/{hen_id}/deliveries", headers=headers)
@@ -343,7 +346,7 @@ def test_wallet_reflects_demo_advanced_days_not_just_real_today(client):
     r = client.get(f"/hens/{hen_id}/wallet", headers=headers)
     before = r.json()
 
-    client.post("/admin/run-tick?days_offset=1")
+    client.post("/admin/run-tick?days_offset=1", headers=ADMIN_HEADERS)
     r = client.get(f"/hens/{hen_id}/feed-log", headers=headers)
     log_after = r.json()
 
@@ -377,10 +380,10 @@ def test_pause_freezes_the_streak_instead_of_breaking_it(client):
     streak_day0 = r.json()["streak"]
 
     client.patch(f"/hens/{hen_id}", json={"paused": True}, headers=headers)
-    client.post("/admin/run-tick?days_offset=1")
-    client.post("/admin/run-tick?days_offset=2")
+    client.post("/admin/run-tick?days_offset=1", headers=ADMIN_HEADERS)
+    client.post("/admin/run-tick?days_offset=2", headers=ADMIN_HEADERS)
     client.patch(f"/hens/{hen_id}", json={"paused": False}, headers=headers)
-    client.post("/admin/run-tick?days_offset=3")
+    client.post("/admin/run-tick?days_offset=3", headers=ADMIN_HEADERS)
 
     r = client.get(f"/hens/{hen_id}/wallet", headers=headers)
     streak_after = r.json()["streak"]
@@ -420,3 +423,197 @@ def test_topup_without_saved_card_is_rejected(client):
     hen = _adopt_hen(client, headers)
     r = client.post(f"/hens/{hen['id']}/wallet/topup", json={"amount_czk": 100}, headers=headers)
     assert r.status_code == 400
+
+
+def test_failed_topup_auto_pauses_hen_and_successful_one_resumes_it(client):
+    from unittest.mock import patch
+
+    from app.integrations.payments import TopUpResult
+
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers)
+    hen_id = hen["id"]
+    client.post(f"/hens/{hen_id}/wallet/setup-intent", headers=headers)
+
+    with patch(
+        "app.integrations.payments.MockPaymentProvider.charge_saved_method",
+        return_value=TopUpResult(success=False, provider_reference="mock-fail", message="card declined"),
+    ):
+        r = client.post(f"/hens/{hen_id}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 402
+
+    r = client.get(f"/hens/{hen_id}", headers=headers)
+    assert r.json()["paused"] is True
+
+    # a real (unpatched, mock-succeeding) top-up should resume it again
+    r = client.post(f"/hens/{hen_id}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 201
+    r = client.get(f"/hens/{hen_id}", headers=headers)
+    assert r.json()["paused"] is False
+
+
+def test_successful_topup_never_resumes_a_manually_paused_hen(client):
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers)
+    hen_id = hen["id"]
+    client.post(f"/hens/{hen_id}/wallet/setup-intent", headers=headers)
+
+    client.patch(f"/hens/{hen_id}", json={"paused": True}, headers=headers)
+    r = client.post(f"/hens/{hen_id}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 201
+
+    r = client.get(f"/hens/{hen_id}", headers=headers)
+    assert r.json()["paused"] is True  # a top-up succeeding doesn't override a deliberate pause
+
+
+# ---------------------------- login rate limiting ----------------------------
+
+def test_login_locks_out_after_too_many_failed_attempts(client):
+    from app import config as app_config
+
+    _, email = _new_user_headers(client)
+    for _ in range(app_config.LOGIN_MAX_ATTEMPTS):
+        r = client.post("/auth/login", data={"username": email, "password": "wrong"})
+        assert r.status_code == 401
+
+    r = client.post("/auth/login", data={"username": email, "password": "wrong"})
+    assert r.status_code == 429
+    # even the *correct* password is locked out now, not just wrong guesses
+    r = client.post("/auth/login", data={"username": email, "password": "correct horse battery staple"})
+    assert r.status_code == 429
+
+
+def test_login_lockout_is_per_email(client):
+    from app import config as app_config
+
+    _, email_a = _new_user_headers(client)
+    _, email_b = _new_user_headers(client)
+    for _ in range(app_config.LOGIN_MAX_ATTEMPTS):
+        client.post("/auth/login", data={"username": email_a, "password": "wrong"})
+
+    r = client.post("/auth/login", data={"username": email_a, "password": "wrong"})
+    assert r.status_code == 429
+    r = client.post("/auth/login", data={"username": email_b, "password": "wrong"})
+    assert r.status_code == 401  # not locked out - a different account
+
+
+# ---------------------------- forgot / reset password ----------------------------
+
+def test_forgot_password_is_silent_about_whether_the_email_exists(client):
+    r = client.post("/auth/forgot-password", json={"email": "nobody-here@example.com"})
+    assert r.status_code == 204  # same response either way - see the endpoint's docstring
+
+
+def test_reset_password_with_valid_token_works_end_to_end(client):
+    from app import models
+    from app.database import SessionLocal
+
+    _, email = _new_user_headers(client)
+    r = client.post("/auth/forgot-password", json={"email": email})
+    assert r.status_code == 204
+
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.email == email).first()
+        token = user.reset_token
+        assert token  # an email would have carried this - ConsoleEmailProvider printed it
+    finally:
+        db.close()
+
+    r = client.post("/auth/reset-password", json={"reset_token": token, "new_password": "totally new password"})
+    assert r.status_code == 204
+
+    r = client.post("/auth/login", data={"username": email, "password": "correct horse battery staple"})
+    assert r.status_code == 401
+    r = client.post("/auth/login", data={"username": email, "password": "totally new password"})
+    assert r.status_code == 200
+
+    # single-use - the same token doesn't work a second time
+    r = client.post("/auth/reset-password", json={"reset_token": token, "new_password": "yet another one"})
+    assert r.status_code == 400
+
+
+def test_reset_password_with_bogus_token_rejected(client):
+    r = client.post("/auth/reset-password", json={"reset_token": "not-a-real-token", "new_password": "whatever123"})
+    assert r.status_code == 400
+
+
+# ---------------------------- account deletion ----------------------------
+
+def test_delete_account_removes_user_and_their_hens(client):
+    headers, email = _new_user_headers(client)
+    _adopt_hen(client, headers)
+
+    r = client.delete("/auth/me", headers=headers)
+    assert r.status_code == 204
+
+    # the token is for a user that no longer exists
+    r = client.get("/auth/me", headers=headers)
+    assert r.status_code == 401
+
+    # the email is free again
+    r = client.post("/auth/register", json={"email": email, "password": "a whole new password"})
+    assert r.status_code == 201
+
+
+# ---------------------------- admin ----------------------------
+
+def test_admin_endpoints_refuse_without_credentials(client):
+    r = client.get("/admin/stats")
+    assert r.status_code == 403
+    r = client.post("/admin/run-tick")
+    assert r.status_code == 403
+
+
+def test_admin_endpoints_refuse_wrong_token(client):
+    r = client.get("/admin/stats", headers={"X-Admin-Token": "not-the-real-token"})
+    assert r.status_code == 403
+
+
+def test_admin_stats_reflect_real_data(client):
+    headers, _ = _new_user_headers(client)
+    _adopt_hen(client, headers, farm_key="dvur")
+
+    r = client.get("/admin/stats", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    s = r.json()
+    assert s["total_users"] >= 1
+    assert s["total_hens"] >= 1
+    assert s["active_hens"] + s["paused_hens"] == s["total_hens"]
+
+
+def test_admin_can_list_users_and_farms(client):
+    r = client.get("/admin/users", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    assert isinstance(r.json(), list)
+
+    r = client.get("/admin/farms", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    assert any(f["key"] == "lipa" for f in r.json())
+
+
+def test_admin_can_create_and_update_a_real_farm(client):
+    r = client.post(
+        "/admin/farms",
+        json={"key": "test-nova-farma", "name": "Testovací Farma", "description": "bio chov",
+              "lat": 50.1, "lng": 14.5, "weekly_capacity": 10},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 201
+    assert r.json()["spots_left"] == 10
+
+    r = client.post(
+        "/admin/farms",
+        json={"key": "test-nova-farma", "name": "Duplicitní", "description": ""},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 409
+
+    r = client.patch("/admin/farms/test-nova-farma", json={"weekly_capacity": 5}, headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    assert r.json()["weekly_capacity"] == 5
+
+    # and it's real enough that someone can actually adopt a hen there
+    headers, _ = _new_user_headers(client)
+    r = client.post("/hens", json={"hen_name": "X", "farm_key": "test-nova-farma"}, headers=headers)
+    assert r.status_code == 201

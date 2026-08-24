@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android blocks plain HTTP by default from API 28+. This app should
+  ALWAYS point KVOC_API_BASE (see www/config.js) at a real https:// backend
+  once one exists - the one exception here is 10.0.2.2, the Android
+  emulator's alias for the host machine's localhost, so a locally-running
+  backend (http://10.0.2.2:8000) is reachable for development/testing only.
+  Nothing else gets a cleartext exception.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+</network-security-config>

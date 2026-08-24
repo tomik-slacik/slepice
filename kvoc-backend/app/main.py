@@ -9,8 +9,9 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 # Windows terminals often default to a legacy codepage that mangles the
@@ -26,9 +27,12 @@ for _stream in (sys.stdout, sys.stderr):
 
 from . import config, models  # noqa: F401  (models import registers them on Base before init_db)
 from .database import SessionLocal, init_db
+from .logging_setup import setup_logging
 from .routers import admin, auth, farms, hens, wallet
 from .scheduler import start_scheduler, stop_scheduler
 from .seed import seed_farms
+
+logger = setup_logging()
 
 
 @asynccontextmanager
@@ -69,6 +73,18 @@ app.include_router(farms.router)
 app.include_router(hens.router)
 app.include_router(wallet.router)
 app.include_router(admin.router)
+
+
+@app.exception_handler(Exception)
+async def log_unhandled_exceptions(request: Request, exc: Exception):
+    """Every unhandled exception gets a full traceback in the log (see
+    logging_setup.py) instead of just vanishing into a bare 500 nobody
+    finds out about until a user complains. The client still only ever
+    sees a generic message - never exc's actual text, which could leak
+    internals (a query, a file path, a stack frame).
+    """
+    logger.exception("unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "internal server error"})
 
 
 @app.get("/health", tags=["health"])

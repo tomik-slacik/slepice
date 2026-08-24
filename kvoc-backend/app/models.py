@@ -27,6 +27,19 @@ class User(Base):
     # whichever registered most recently.
     fcm_token = Column(String, nullable=True)
 
+    # "forgot password" flow (see POST /auth/forgot-password, integrations/email.py).
+    # Both null between requests - a token is single-use and time-boxed.
+    reset_token = Column(String, nullable=True)
+    reset_token_expires = Column(DateTime, nullable=True)
+
+    # Lets GET/POST /admin/* endpoints belong to a real user account instead
+    # of only a shared bearer token - see routers/admin.py. Nobody is an
+    # admin by default; the first one has to be granted directly in the
+    # database (or via KVOC_ADMIN_TOKEN - see config.py) since there's no
+    # "promote to admin" endpoint (an admin granting themselves more access
+    # over an API is exactly the kind of thing that shouldn't be self-serve).
+    is_admin = Column(Boolean, nullable=False, default=False)
+
     hens = relationship("Hen", back_populates="owner", cascade="all, delete-orphan")
 
 
@@ -69,6 +82,11 @@ class Hen(Base):
     daily_amount = Column(Integer, nullable=False, default=20)
     address = Column(String, nullable=False, default="")
     paused = Column(Boolean, nullable=False, default=False)
+    # None normally. "billing" when a failed wallet top-up paused this hen
+    # automatically (see routers/wallet.py) rather than the user choosing
+    # to - lets a later successful top-up auto-resume it without also
+    # un-pausing a hen the user paused deliberately for their own reasons.
+    paused_reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
 
     farm = relationship("Farm", back_populates="hens")

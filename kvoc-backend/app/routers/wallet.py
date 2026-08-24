@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from .. import config, models, schemas
 from ..auth import get_current_user
 from ..database import get_db
+from ..integrations.notifications import get_notification_provider
 from ..integrations.payments import get_payment_provider
 from .hens import _get_owned_hen
 
@@ -63,6 +64,23 @@ def top_up_wallet(
         status="succeeded" if result.success else "failed",
     )
     db.add(topup)
+
+    notifier = get_notification_provider()
+    if result.success:
+        # a previous failed top-up may have auto-paused this hen (below) -
+        # a later successful one un-pauses it again, but only if *that* was
+        # the reason, never overriding a pause the user chose themselves
+        if hen.paused and hen.paused_reason == "billing":
+            hen.paused = False
+            hen.paused_reason = None
+            notifier.send(hen.id, current_user.fcm_token, "OBNOVENO",
+                          f"Platba prošla, {hen.hen_name} je zase v provozu.")
+    else:
+        hen.paused = True
+        hen.paused_reason = "billing"
+        notifier.send(hen.id, current_user.fcm_token, "PLATBA SE NEZDAŘILA",
+                      f"Nepodařilo se dobít peněženku - {hen.hen_name} je pozastavená, dokud to nespravíš.")
+
     db.commit()
     db.refresh(topup)
 

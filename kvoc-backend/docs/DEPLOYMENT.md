@@ -59,6 +59,11 @@ Docker image. Obecný postup:
 | `KVOC_CORS_ORIGINS` | Ne | Kdo smí volat API z prohlížeče odjinud. `app/webapp/` to nepotřebuje (běží ze stejné adresy) — nastav, jen pokud appku budeš volat z jiné domény. |
 | `KVOC_PAYMENT_PROVIDER` | Ne | `mock` (výchozí) nebo `stripe`. |
 | `KVOC_STRIPE_SECRET_KEY`, `KVOC_STRIPE_PUBLISHABLE_KEY` | Jen pro `stripe` | Viz `PAYMENT_INTEGRATION.md`. |
+| `KVOC_NOTIFICATION_PROVIDER` | Ne | `console` (výchozí) nebo `fcm`. Viz `NOTIFICATIONS.md`. |
+| `KVOC_FIREBASE_CREDENTIALS_JSON` | Jen pro `fcm` | Viz `NOTIFICATIONS.md`. |
+| `KVOC_EMAIL_PROVIDER` | Ne | `console` (výchozí) nebo `smtp`. Viz `EMAIL.md`. |
+| `KVOC_SMTP_HOST/PORT/USERNAME/PASSWORD`, `KVOC_EMAIL_FROM` | Jen pro `smtp` | Viz `EMAIL.md`. |
+| `KVOC_ADMIN_TOKEN` | Ne (ale bez něj a bez `is_admin` účtu je `/admin/*` úplně nedostupné) | Viz `ADMIN.md`. |
 
 ## Co si pohlídat
 
@@ -67,13 +72,14 @@ Docker image. Obecný postup:
   `app/scheduler.py` (denní úkol v 8:00) **nemusí spolehlivě naběhnout**,
   pokud appka zrovna spí. Pro skutečný provoz buď placená "always on"
   úroveň, nebo externí služba, která `POST /admin/run-tick` zavolá zvenku
-  v daný čas (a `/admin/run-tick` by pak potřeboval vlastní zámek/autentizaci
-  — teď je otevřený, viz TODO v `app/routers/admin.py`).
-- **Jakmile appka běží na skutečné adrese**, aktualizuj `mobile-app/www/`
-  (teď obaluje offline verzi appky) tak, aby mluvila s tou adresou —
-  buď zkopíruj `app/webapp/index.html` místo `frontend/index.html`, nebo
-  appku v Capacitoru nasměruj na URL přes `server.url` v
-  `capacitor.config.json`.
+  v daný čas (`/admin/run-tick` už teď vyžaduje admin přihlášení - viz
+  `ADMIN.md` - tenhle TODO je vyřešený).
+- **Jakmile appka běží na skutečné adrese**, otevři
+  `mobile-app-real/www/config.js` a nastav `window.KVOC_API_BASE` na tu
+  adresu (`https://...`) — to je jediná změna, co `mobile-app-real/`
+  (skutečná appka s přihlášením/platbami/push notifikacemi, na rozdíl od
+  `mobile-app/`, což je pořád jen offline demo) potřebuje, aby mluvila se
+  skutečným backendem. Viz `mobile-app-real/README.md`.
 - **`KVOC_CORS_ORIGINS=*`** je v pořádku, dokud appku volá jen
   `app/webapp/` ze stejné adresy. Přidáš-li samostatně hostovaný frontend
   jinde, zúž to na jeho konkrétní adresu.

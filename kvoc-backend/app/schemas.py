@@ -29,11 +29,37 @@ class ChangePasswordIn(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=200)
 
 
+class ForgotPasswordIn(BaseModel):
+    email: str = Field(..., min_length=3, max_length=200)
+
+
+class ResetPasswordIn(BaseModel):
+    reset_token: str = Field(..., min_length=1, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=200)
+
+
 class DeviceTokenIn(BaseModel):
     # The FCM registration token the mobile app gets back from
     # PushNotifications.register() (see mobile-app's push-notifications.js).
     # Send an empty string to unregister (e.g. on logout).
     fcm_token: str = Field(..., max_length=4096)
+
+
+class FarmCreate(BaseModel):
+    key: str = Field(..., min_length=1, max_length=40)
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str = Field(default="", max_length=200)
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    weekly_capacity: Optional[int] = Field(default=None, gt=0)
+
+
+class FarmUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    description: Optional[str] = Field(default=None, max_length=200)
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
+    weekly_capacity: Optional[int] = Field(default=None, gt=0)
 
 
 class FarmOut(BaseModel):

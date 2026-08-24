@@ -68,3 +68,36 @@ PAYMENT_PROVIDER = os.environ.get("KVOC_PAYMENT_PROVIDER", "mock")
 STRIPE_SECRET_KEY = os.environ.get("KVOC_STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("KVOC_STRIPE_PUBLISHABLE_KEY", "")
 TOPUP_WEEKS_COVERED = 4  # how many weeks of daily_amount one top-up should cover
+
+# ---- email ----
+# Which EmailProvider app/integrations/email.py hands back. "console" (the
+# safe default) never sends anything real, just prints what would be sent.
+# "smtp" sends a real email through any SMTP account (Gmail with an app
+# password works fine for low volume / getting started - no dedicated
+# transactional-email service account required) - see docs/EMAIL.md.
+EMAIL_PROVIDER = os.environ.get("KVOC_EMAIL_PROVIDER", "console")
+SMTP_HOST = os.environ.get("KVOC_SMTP_HOST", "")
+SMTP_PORT = int(os.environ.get("KVOC_SMTP_PORT", "587"))
+SMTP_USERNAME = os.environ.get("KVOC_SMTP_USERNAME", "")
+SMTP_PASSWORD = os.environ.get("KVOC_SMTP_PASSWORD", "")
+EMAIL_FROM = os.environ.get("KVOC_EMAIL_FROM", "Kvoč <noreply@kvoc.cz>")
+PASSWORD_RESET_EXPIRE_MINUTES = 30
+# where the reset link in the email points - the bundled webapp by default
+PASSWORD_RESET_URL_BASE = os.environ.get("KVOC_PASSWORD_RESET_URL_BASE", "/app/")
+
+# ---- admin ----
+# A single shared bearer token for routers/admin.py's data endpoints
+# (X-Admin-Token header) - simplest thing that actually works for a
+# one-or-two-person operation. Empty by default, which *disables* every
+# admin endpoint outright (never silently open) - set it before you need
+# the admin dashboard. A User.is_admin flag (see models.py) is the other,
+# per-account way in - either is accepted.
+ADMIN_TOKEN = os.environ.get("KVOC_ADMIN_TOKEN", "")
+
+# ---- login rate limiting ----
+# Per-email, in-memory (see auth.py) - resets on process restart and isn't
+# shared across multiple server instances. Fine for this project's actual
+# deployment shape (one process, see docs/DEPLOYMENT.md); a multi-instance
+# deployment would need this moved to somewhere shared (e.g. Redis) instead.
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_LOCKOUT_MINUTES = 15
