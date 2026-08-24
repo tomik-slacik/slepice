@@ -58,6 +58,8 @@
   .name-input:focus{border-bottom-color:var(--accent);}
   .text-input{font-family:'Karla',sans-serif;font-size:14px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:11px 12px;width:100%;outline:none;}
   .text-input:focus{border-color:var(--accent);}
+  .rename-input{font-family:'Bitter',serif;font-weight:700;font-size:16.5px;color:var(--ink);background:transparent;border:none;border-bottom:2px solid var(--line);padding:4px 2px;outline:none;}
+  .rename-input:focus{border-bottom-color:var(--accent);}
 
   .farm-card{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1.5px solid var(--line);border-radius:4px;box-shadow:2px 2px 0 var(--shadow);padding:13px 15px;background:var(--surface);}
   .farm-card[data-selected="true"]{border-color:var(--accent);background:var(--surface-2);}
@@ -99,6 +101,16 @@
   .hen-card{display:flex;flex-direction:column;align-items:center;gap:2px;}
   .hen-name{font-family:'Bitter',serif;font-weight:700;font-size:19px;margin-top:4px;}
   .hen-meta{font-size:13px;color:var(--ink-soft);}
+
+  .hen-switcher{display:flex;gap:8px;overflow-x:auto;padding-bottom:1px;}
+  .hen-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 12px;border-radius:4px;border:1.5px solid var(--line);background:var(--surface);}
+  .hen-chip[data-active="true"]{border-color:var(--accent);background:var(--surface-2);}
+  .hc-avatar{width:24px;height:24px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;}
+  .hen-chip[data-active="true"] .hc-avatar{background:var(--accent);}
+  .hc-name{font-size:10px;font-weight:600;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-soft);}
+  .hen-chip[data-active="true"] .hc-name{color:var(--ink);}
+
+  .hen-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);}
 
   .day-row{display:flex;gap:7px;}
   .day-chip{flex:1;display:flex;flex-direction:column;align-items:center;gap:5px;padding:10px 0;border:1.5px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink-soft);}
@@ -204,7 +216,7 @@
   'use strict';
 
   // ============ constants ============
-  var STORAGE_KEY = 'kvoc_app_state_v1';
+  var STORAGE_KEY = 'kvoc_app_state_v2';
   var FARMS = [
     {key:'lipa', name:'Farma U Lípy', meta:'volný výběh · Sázava, 18 km'},
     {key:'dvur', name:'Dvůr Na Kopci', meta:'bio chov · Benešov, 24 km'},
@@ -221,15 +233,30 @@
   ];
   var DAY_LABELS = ['NE','PO','ÚT','ST','ČT','PÁ','SO'];
 
-  // ============ state ============
+  // ============ state — a list of independent hens ============
+  function freshHen(id, henName, farm, dailyAmount, address){
+    return {
+      id: id, henName: henName, farm: farm, dailyAmount: dailyAmount, address: address,
+      paused: false, feedLog: {}, deliveries: [], pausedDates: {}
+    };
+  }
+
   var defaults = {
-    onboarded:false, farm:'lipa', henName:'Nuška', dailyAmount:20,
-    address:'Na Kopci 12, Praha 6', paused:false, dayOffset:0, activeTab:'home',
-    feedLog:{}, deliveries:[], pausedDates:{}
+    onboarded: false, dayOffset: 0, activeTab: 'home', activeHenId: null,
+    nextHenId: 1, hens: []
   };
   var state = loadState();
-  if(!state){ state = JSON.parse(JSON.stringify(defaults)); }
+  if(!state || !Array.isArray(state.hens)){ state = JSON.parse(JSON.stringify(defaults)); }
+
   var obStep = 1;
+  var obMode = 'first';       // 'first' (very first hen) | 'add' (adding another)
+  // Initialized with real defaults up front (not null) - renderOnboarding()
+  // reads obDraft.* unconditionally, and the very first render for a brand
+  // new visitor happens before startOnboarding() is ever called.
+  var obDraft = {henName:'Nuška', farm:'lipa', dailyAmount:20, address:''};
+  var showingOnboarding = false; // transient - lets "add a hen" reopen onboarding without touching state.onboarded
+  var selDay = null;
+  var actFilter = 'all';
 
   function loadState(){
     try{
@@ -239,6 +266,10 @@
     return null;
   }
   function saveState(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){} }
+
+  function activeHen(){
+    return state.hens.filter(function(h){ return h.id === state.activeHenId; })[0] || state.hens[0] || null;
+  }
 
   // ============ date helpers ============
   function pad(n){ return n<10 ? '0'+n : ''+n; }
@@ -253,23 +284,28 @@
   function fmtDateHuman(key){
     var parts=key.split('-'); return parts[2]+'.'+parts[1]+'.';
   }
+  function fmtFull(d){
+    var days=['neděle','pondělí','úterý','středa','čtvrtek','pátek','sobota'];
+    return days[d.getDay()]+' '+d.getDate()+'.'+(d.getMonth()+1)+'.';
+  }
+  function eggsPreview(amount){ return Math.max(1, Math.round(amount*5/12.5)); }
+  function farmName(key){ var f=FARMS.filter(function(x){return x.key===key;})[0]; return f? f.name+' · '+f.meta.split('·')[0].trim() : ''; }
 
-  // ============ business logic ============
-  function runTick(){
-    var today = getNow();
+  // ============ business logic (per hen) ============
+  function tickHen(hen, today){
     var toasts = [];
     if(isWeekday(today)){
       var key = dateKey(today);
-      if(state.paused){
-        state.pausedDates[key] = true;
-      } else if(!state.feedLog[key]){
+      if(hen.paused){
+        hen.pausedDates[key] = true;
+      } else if(!hen.feedLog[key]){
         var msg = FEED_MESSAGES[Math.floor(Math.random()*FEED_MESSAGES.length)];
-        state.feedLog[key] = {amount:state.dailyAmount, msg:state.henName+' '+msg, bonus:false, date:key};
-        toasts.push({tag:'−'+state.dailyAmount+' Kč', body:state.feedLog[key].msg});
+        hen.feedLog[key] = {amount:hen.dailyAmount, msg:hen.henName+' '+msg, bonus:false, date:key};
+        toasts.push({tag:'−'+hen.dailyAmount+' Kč', body:hen.feedLog[key].msg});
 
         if(Math.random() < 0.18){
-          var bmsg = state.henName+' má dobrý den — snesla vejce navíc. Přidáme ho do páteční bedýnky.';
-          state.feedLog[key+'-bonus'] = {amount:0, msg:bmsg, bonus:true, date:key};
+          var bmsg = hen.henName+' má dobrý den — snesla vejce navíc. Přidáme ho do páteční bedýnky.';
+          hen.feedLog[key+'-bonus'] = {amount:0, msg:bmsg, bonus:true, date:key};
           toasts.push({tag:'BONUS', body:bmsg});
         }
 
@@ -279,16 +315,16 @@
           for(var i=0;i<5;i++){
             var dd = new Date(mon.getTime()+i*86400000);
             var k = dateKey(dd);
-            if(state.feedLog[k] && !state.feedLog[k].bonus) weekAmount += state.feedLog[k].amount;
+            if(hen.feedLog[k] && !hen.feedLog[k].bonus) weekAmount += hen.feedLog[k].amount;
           }
           var eggs = Math.max(1, Math.round(weekAmount/12.5));
-          state.deliveries.push({weekStart:dateKey(mon), eggs:eggs, amount:weekAmount, status:'transit', date:key});
-          toasts.push({tag:'PÁTEK', body:'Tenhle týden jsi '+state.henName+' krmil. Dnes odpoledne dorazí '+eggs+' vajec.'});
+          hen.deliveries.push({weekStart:dateKey(mon), eggs:eggs, amount:weekAmount, status:'transit', date:key});
+          toasts.push({tag:'PÁTEK', body:'Tenhle týden jsi '+hen.henName+' krmil. Dnes odpoledne dorazí '+eggs+' vajec.'});
         }
       }
     }
-    if(state.deliveries.length){
-      var last = state.deliveries[state.deliveries.length-1];
+    if(hen.deliveries.length){
+      var last = hen.deliveries[hen.deliveries.length-1];
       if(last.status==='transit'){
         var fridayDate = dateOnly(new Date(last.date+'T00:00:00'));
         var daysSince = Math.round((dateOnly(today)-fridayDate)/86400000);
@@ -298,19 +334,29 @@
         }
       }
     }
-    saveState();
-    if(toasts.length) showToasts(toasts);
+    return toasts;
   }
 
-  function computeStreak(){
+  function runTick(){
+    var today = getNow();
+    var activeToasts = [];
+    state.hens.forEach(function(hen){
+      var toasts = tickHen(hen, today);
+      if(hen.id === state.activeHenId) activeToasts = activeToasts.concat(toasts);
+    });
+    saveState();
+    if(activeToasts.length) showToasts(activeToasts);
+  }
+
+  function computeStreak(hen){
     var d = dateOnly(getNow());
     var todayKey = dateKey(getNow());
     var streak = 0;
     for(var i=0;i<370;i++){
       if(isWeekday(d)){
         var key = dateKey(d);
-        if(state.feedLog[key] && !state.feedLog[key].bonus){ streak++; }
-        else if(state.pausedDates && state.pausedDates[key]){ /* frozen by pause, does not break */ }
+        if(hen.feedLog[key] && !hen.feedLog[key].bonus){ streak++; }
+        else if(hen.pausedDates && hen.pausedDates[key]){ /* frozen by pause, does not break */ }
         else if(key===todayKey){ /* today not ticked yet, skip */ }
         else { break; }
       }
@@ -319,7 +365,7 @@
     return streak;
   }
 
-  function computeWeekBalance(){
+  function computeWeekBalance(hen){
     var mon = mondayOf(getNow());
     var today = dateOnly(getNow());
     var sum = 0;
@@ -327,12 +373,10 @@
       var dd = new Date(mon.getTime()+i*86400000);
       if(dd.getTime() > today.getTime()) break;
       var k = dateKey(dd);
-      if(state.feedLog[k] && !state.feedLog[k].bonus) sum += state.feedLog[k].amount;
+      if(hen.feedLog[k] && !hen.feedLog[k].bonus) sum += hen.feedLog[k].amount;
     }
     return sum;
   }
-
-  function eggsPreview(amount){ return Math.max(1, Math.round(amount*5/12.5)); }
 
   // ============ toasts ============
   var toastQueue = [];
@@ -401,42 +445,56 @@
       '<circle cx="165" cy="60" r="3.5" style="fill:var(--ink)"/></svg>'
   };
 
+  // ============ hen switcher (shared by Home + Settings) ============
+  function henSwitcherHtml(){
+    if(state.hens.length <= 1) return '';
+    var chips = state.hens.map(function(h){
+      var active = h.id === state.activeHenId;
+      return '<div class="hen-chip pressable" data-action="switch-hen" data-hen-id="'+h.id+'" data-active="'+active+'">'+
+        '<div class="hc-avatar">'+ICO.egg+'</div><span class="hc-name mono">'+escapeHtml(h.henName)+'</span></div>';
+    }).join('');
+    return '<div class="hen-switcher">'+chips+'</div>';
+  }
+
   // ============ render: onboarding ============
   function renderOnboarding(){
     var host = document.getElementById('view-onboarding');
     if(obStep===1){
       var farmCards = FARMS.map(function(f){
-        var sel = state.farm===f.key;
+        var sel = obDraft.farm===f.key;
         return '<div class="farm-card pressable" data-action="select-farm" data-farm="'+f.key+'" data-selected="'+sel+'">'+
           '<div><div class="farm-name">'+escapeHtml(f.name)+'</div><div class="farm-meta">'+escapeHtml(f.meta)+'</div></div>'+
           '<div class="check-circle">'+ICO.check+'</div></div>';
       }).join('');
+      var backSlot = obMode==='add'
+        ? '<span class="pressable" data-action="onb-cancel">'+ICO.back+'</span>'
+        : '<span></span>';
       host.innerHTML =
-        '<div class="topbar"><span></span><span class="app-eyebrow">Adopce</span><span class="mono" style="font-size:10.5px;color:var(--ink-soft);">Krok 1 z 2</span></div>'+
+        '<div class="topbar">'+backSlot+'<span class="app-eyebrow">'+(obMode==='add'?'Nová slepička':'Adopce')+'</span><span class="mono" style="font-size:10.5px;color:var(--ink-soft);">Krok 1 z 2</span></div>'+
         '<div><div class="app-h1">Vyber farmu</div><div class="app-sub" style="margin-top:6px;">Slepička poroste u konkrétního farmáře — vždycky víš, odkud tvoje vejce jsou.</div></div>'+
         '<div style="display:flex;flex-direction:column;gap:9px;">'+farmCards+'</div>'+
-        '<div><div class="field-label">Pojmenuj svoji slepičku</div><input class="name-input" id="ob-name" type="text" value="'+escapeHtml(state.henName)+'"></div>'+
+        '<div><div class="field-label">Pojmenuj svoji slepičku</div><input class="name-input" id="ob-name" type="text" value="'+escapeHtml(obDraft.henName)+'"></div>'+
         '<div style="flex:1;"></div>'+
         '<div class="step-dots"><span data-on="true"></span><span data-on="false"></span></div>'+
         '<div class="pressable" data-action="onb-next"><div class="btn-primary"><span>Pokračovat</span>'+ICO.arrowR+'</div></div>';
     } else {
-      var weekly = state.dailyAmount*5;
-      var eggs = eggsPreview(state.dailyAmount);
-      var pills = ['PO','ÚT','ST','ČT','PÁ','SO','NE'].map(function(l,i){
+      var weekly = obDraft.dailyAmount*5;
+      var eggs = eggsPreview(obDraft.dailyAmount);
+      var pills = ['PO','ÚT','ST','ČT','PÁ','SO','NE'].map(function(l){
         var active = l==='PÁ';
         return '<div class="day-pill pressable" data-action="day-pill" data-active="'+active+'">'+l+'</div>';
       }).join('');
       host.innerHTML =
-        '<div class="topbar"><span class="pressable" data-action="onb-back">'+ICO.back+'</span><span class="app-eyebrow">Adopce</span><span class="mono" style="font-size:10.5px;color:var(--ink-soft);">Krok 2 z 2</span></div>'+
+        '<div class="topbar"><span class="pressable" data-action="onb-back">'+ICO.back+'</span><span class="app-eyebrow">'+(obMode==='add'?'Nová slepička':'Adopce')+'</span><span class="mono" style="font-size:10.5px;color:var(--ink-soft);">Krok 2 z 2</span></div>'+
         '<div><div class="app-h1" style="font-size:22px;">Kolik jí dáš denně?</div><div class="app-sub" style="margin-top:6px;">Posuň jezdcem. V pátek se nastřádaná částka promění ve vejce.</div></div>'+
         '<div class="amount-card">'+
-          '<div class="amount-display"><span class="amount-num" id="ob-amount-num">'+state.dailyAmount+'</span><span class="amount-unit">Kč / den</span></div>'+
-          '<input type="range" min="10" max="40" step="5" value="'+state.dailyAmount+'" id="ob-range">'+
+          '<div class="amount-display"><span class="amount-num" id="ob-amount-num">'+obDraft.dailyAmount+'</span><span class="amount-unit">Kč / den</span></div>'+
+          '<input type="range" min="10" max="40" step="5" value="'+obDraft.dailyAmount+'" id="ob-range">'+
           '<div class="range-ends"><span>10 Kč</span><span>40 Kč</span></div>'+
         '</div>'+
         '<div class="reveal-panel"><div class="app-eyebrow" style="font-size:10px;">Odhad na pátek</div>'+
           '<div class="reveal-msg" style="margin-top:5px;">Týdně naspoříš <b id="ob-weekly">'+weekly+'</b> Kč → přibližně <b id="ob-eggs">'+eggs+'</b> vajec.</div></div>'+
-        '<div><div class="field-label">Doručovací adresa</div><input class="text-input" id="ob-address" type="text" value="'+escapeHtml(state.address)+'"></div>'+
+        '<div><div class="field-label">Doručovací adresa</div><input class="text-input" id="ob-address" type="text" value="'+escapeHtml(obDraft.address)+'"></div>'+
         '<div><div class="field-label">Den svozu</div><div class="day-pill-row">'+pills+'</div><div class="hint mono" id="ob-hint"></div></div>'+
         '<div style="flex:1;"></div>'+
         '<div class="step-dots"><span data-on="false"></span><span data-on="true"></span></div>'+
@@ -446,6 +504,7 @@
 
   // ============ render: home ============
   function renderHome(){
+    var hen = activeHen();
     var today = getNow();
     var mon = mondayOf(today);
     var todayKey = dateKey(today);
@@ -454,33 +513,31 @@
       var dd = new Date(mon.getTime()+i*86400000);
       var key = dateKey(dd);
       var isToday = key===todayKey;
-      var fed = !!(state.feedLog[key] && !state.feedLog[key].bonus);
+      var fed = !!(hen.feedLog[key] && !hen.feedLog[key].bonus);
       days.push({key:key, label:DAY_LABELS[dd.getDay()], fed:fed, today:isToday});
     }
-    if(!window.__selDay || days.every(function(d){return d.key!==window.__selDay;})){
-      window.__selDay = todayKey;
+    if(!selDay || days.every(function(d){return d.key!==selDay;})){
+      selDay = todayKey;
     }
-    var selDay = days.filter(function(d){return d.key===window.__selDay;})[0] || days[0];
-    var selEntry = state.feedLog[selDay.key];
+    var selDayObj = days.filter(function(d){return d.key===selDay;})[0] || days[0];
+    var selEntry = hen.feedLog[selDayObj.key];
     var msg, amountLbl;
     if(selEntry){ msg = selEntry.msg; amountLbl = '−'+selEntry.amount+' Kč'; }
-    else if(selDay.key === todayKey && state.paused){ msg = 'Dnes je appka pozastavená — '+state.henName+' se dnes nekrmila.'; amountLbl='—'; }
-    else if(selDay.key < todayKey){ msg = 'Tenhle den se '+state.henName+' nenakrmila — appka buď ještě neběžela, nebo byla pozastavená.'; amountLbl='—'; }
+    else if(selDayObj.key === todayKey && hen.paused){ msg = 'Dnes je appka pozastavená — '+hen.henName+' se dnes nekrmila.'; amountLbl='—'; }
+    else if(selDayObj.key < todayKey){ msg = 'Tenhle den se '+hen.henName+' nenakrmila — appka buď ještě neběžela, nebo byla pozastavená.'; amountLbl='—'; }
     else { msg = 'Tenhle den ještě nenastal.'; amountLbl='—'; }
 
     var dayChips = days.map(function(d){
-      return '<div class="day-chip pressable" data-action="select-home-day" data-day="'+d.key+'" data-fed="'+d.fed+'" data-today="'+d.today+'" data-selected="'+(d.key===selDay.key)+'">'+
+      return '<div class="day-chip pressable" data-action="select-home-day" data-day="'+d.key+'" data-fed="'+d.fed+'" data-today="'+d.today+'" data-selected="'+(d.key===selDayObj.key)+'">'+
         '<span class="mono">'+d.label+'</span><span class="dot"></span></div>';
     }).join('');
 
-    var balance = computeWeekBalance();
-    var streak = computeStreak();
+    var balance = computeWeekBalance(hen);
+    var streak = computeStreak(hen);
 
     var deliveryHtml = '';
-    if(state.deliveries.length){
-      var last = state.deliveries[state.deliveries.length-1];
-      var reachedReady = true;
-      var reachedTransit = true;
+    if(hen.deliveries.length){
+      var last = hen.deliveries[hen.deliveries.length-1];
       var reachedDelivered = last.status==='delivered';
       deliveryHtml =
         '<div class="card">'+
@@ -488,21 +545,22 @@
           '<div class="egg-summary-num" style="margin-top:6px;"><span class="n">'+last.eggs+'</span><span class="u">vajec</span></div>'+
           '<div class="app-sub">z tvého příspěvku '+last.amount+' Kč za ten týden</div>'+
           '<div class="stepper">'+
-            step('ready','PŘIPRAVENO',true,true)+
-            step('transit','NA CESTĚ',true,last.status!=='ready')+
-            step('delivered','DORUČENO',reachedDelivered,false)+
+            step('ready','PŘIPRAVENO',true)+
+            step('transit','NA CESTĚ',true)+
+            step('delivered','DORUČENO',reachedDelivered)+
           '</div>'+
         '</div>';
     }
 
     var host = document.getElementById('main-content');
     host.innerHTML =
+      henSwitcherHtml()+
       '<div class="topbar"><div><div class="app-eyebrow">'+greeting()+'</div><div class="app-h1" style="font-size:23px;margin-top:2px;">Ahoj</div></div>'+
         '<div class="avatar">'+ICO.egg+'</div></div>'+
-      '<div class="card hen-card">'+ICO.hen+'<div class="hen-name">'+escapeHtml(state.henName)+'</div>'+
-        '<div class="hen-meta">'+escapeHtml(farmName(state.farm))+'</div></div>'+
+      '<div class="card hen-card">'+ICO.hen+'<div class="hen-name">'+escapeHtml(hen.henName)+'</div>'+
+        '<div class="hen-meta">'+escapeHtml(farmName(hen.farm))+'</div></div>'+
       '<div><div class="field-label">Tento týden</div><div class="day-row">'+dayChips+'</div></div>'+
-      '<div class="reveal-panel"><div class="reveal-top"><span>'+selDay.label+' '+fmtDateHuman(selDay.key)+'</span><span>'+amountLbl+'</span></div>'+
+      '<div class="reveal-panel"><div class="reveal-top"><span>'+selDayObj.label+' '+fmtDateHuman(selDayObj.key)+'</span><span>'+amountLbl+'</span></div>'+
         '<div class="reveal-msg">'+escapeHtml(msg)+'</div></div>'+
       '<div class="stat-row">'+
         '<div class="stat-tile"><div class="label">Zůstatek k pátku</div><div class="value">'+balance+' Kč</div></div>'+
@@ -510,9 +568,7 @@
       '</div>'+
       deliveryHtml;
   }
-  function step(key,label,reached,notFirst){
-    var firstCls = notFirst ? '' : ' first';
-    var lastCls = key==='delivered' ? ' first' : '';
+  function step(key,label,reached){
     return '<div class="step" data-reached="'+reached+'"><div class="step-track">'+
       '<div class="step-line'+(key==='ready'?' first':'')+'"></div><div class="step-dot"></div>'+
       '<div class="step-line'+(key==='delivered'?' first':'')+'"></div></div>'+
@@ -524,25 +580,24 @@
     if(h<18) return 'Dobré odpoledne';
     return 'Dobrý večer';
   }
-  function farmName(key){ var f=FARMS.filter(function(x){return x.key===key;})[0]; return f? f.name+' · '+f.meta.split('·')[0].trim() : ''; }
 
   // ============ render: activity ============
   function renderActivity(){
+    var hen = activeHen();
     var entries = [];
-    Object.keys(state.feedLog).forEach(function(k){
-      var e = state.feedLog[k];
+    Object.keys(hen.feedLog).forEach(function(k){
+      var e = hen.feedLog[k];
       entries.push({when:e.date, type: e.bonus?'bonus':'feed', msg:e.msg, tag: e.bonus?'BONUS':('−'+e.amount+' Kč'), sortKey:k});
     });
-    state.deliveries.forEach(function(d){
-      entries.push({when:d.date, type:'summary', msg:'Ten týden jsi '+state.henName+' krmil za '+d.amount+' Kč. '+(d.status==='delivered'?'Vejce ('+d.eggs+') už dorazila.':'Dnes odpoledne dorazí '+d.eggs+' vajec.'), tag: d.status==='delivered'?'DORUČENO':'SOUHRN', sortKey:d.date+'-z'});
+    hen.deliveries.forEach(function(d){
+      entries.push({when:d.date, type:'summary', msg:'Ten týden jsi '+hen.henName+' krmil za '+d.amount+' Kč. '+(d.status==='delivered'?'Vejce ('+d.eggs+') už dorazila.':'Dnes odpoledne dorazí '+d.eggs+' vajec.'), tag: d.status==='delivered'?'DORUČENO':'SOUHRN', sortKey:d.date+'-z'});
     });
     entries.sort(function(a,b){ return a.sortKey < b.sortKey ? 1 : -1; });
     entries = entries.slice(0,20);
 
-    var filter = window.__actFilter || 'all';
     var visible = entries.filter(function(e){
-      if(filter==='all') return true;
-      if(filter==='feed') return e.type==='feed';
+      if(actFilter==='all') return true;
+      if(actFilter==='feed') return e.type==='feed';
       return e.type==='bonus' || e.type==='summary';
     });
 
@@ -552,43 +607,60 @@
     }).join('') : '<div class="empty-note">Zatím žádná aktivita v tomhle filtru.</div>';
 
     var filters = [['all','Vše'],['feed','Krmení'],['bonus','Souhrny']].map(function(f){
-      return '<div class="pill pressable" data-action="filter" data-filter="'+f[0]+'" data-active="'+(filter===f[0])+'">'+f[1]+'</div>';
+      return '<div class="pill pressable" data-action="filter" data-filter="'+f[0]+'" data-active="'+(actFilter===f[0])+'">'+f[1]+'</div>';
     }).join('');
 
     var host = document.getElementById('main-content');
     host.innerHTML =
-      '<div><div class="app-eyebrow">Historie</div><div class="app-h1" style="margin-top:2px;">Aktivita</div></div>'+
+      henSwitcherHtml()+
+      '<div><div class="app-eyebrow">Historie · '+escapeHtml(hen.henName)+'</div><div class="app-h1" style="margin-top:2px;">Aktivita</div></div>'+
       '<div class="pill-row">'+filters+'</div>'+
       '<div class="stub-list">'+list+'</div>';
   }
 
   // ============ render: settings ============
   function renderSettings(){
-    var weekly = state.dailyAmount*5;
-    var eggs = eggsPreview(state.dailyAmount);
+    var hen = activeHen();
+    var weekly = hen.dailyAmount*5;
+    var eggs = eggsPreview(hen.dailyAmount);
     var notifSupported = ('Notification' in window);
     var notifPerm = notifSupported ? Notification.permission : 'unsupported';
     var notifLabel = notifPerm==='granted' ? 'Oznámení povolena' : (notifPerm==='denied' ? 'Oznámení zablokována v prohlížeči' : 'Povolit oznámení');
+
+    var others = state.hens.filter(function(h){ return h.id !== hen.id; });
+    var othersHtml = others.length ? (
+      '<div class="field-label" style="margin-top:16px;">Ostatní slepičky</div>'+
+      others.map(function(h){
+        return '<div class="hen-row pressable" data-action="switch-hen" data-hen-id="'+h.id+'">'+
+          '<div><div class="farm-name" style="font-size:14px;">'+escapeHtml(h.henName)+'</div><div class="farm-meta">'+escapeHtml(farmName(h.farm))+'</div></div>'+
+          '<span class="mono" style="font-size:10.5px;color:var(--accent-text);">přepnout</span></div>';
+      }).join('')
+    ) : '';
 
     var host = document.getElementById('main-content');
     host.innerHTML =
       '<div class="app-h1">Nastavení</div>'+
       '<div class="card"><div class="field-label">Tvoje slepička</div>'+
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;">'+
-          '<div><div class="farm-name">'+escapeHtml(state.henName)+'</div><div class="farm-meta">'+escapeHtml(farmName(state.farm))+'</div></div>'+
-          '<div style="opacity:.7;">'+ICO.egg+'</div></div></div>'+
+        '<div style="display:flex;align-items:center;gap:10px;margin-top:6px;">'+
+          '<input class="rename-input" id="set-hen-name" type="text" value="'+escapeHtml(hen.henName)+'" style="flex:1;">'+
+          '<div style="opacity:.7;flex-shrink:0;">'+ICO.egg+'</div>'+
+        '</div>'+
+        '<div class="farm-meta" style="margin-top:4px;">'+escapeHtml(farmName(hen.farm))+'</div>'+
+        othersHtml+
+        '<div class="pressable" data-action="add-hen" style="margin-top:14px;"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">+ Přidat další slepičku</div></div>'+
+      '</div>'+
       '<div class="card"><div class="field-label">Denní příspěvek</div>'+
         '<div class="stepper-row"><div class="round-btn pressable" data-action="amount-minus">'+ICO.minus+'</div>'+
-          '<div class="stepper-num">'+state.dailyAmount+' Kč</div>'+
+          '<div class="stepper-num">'+hen.dailyAmount+' Kč</div>'+
           '<div class="round-btn pressable" data-action="amount-plus">'+ICO.plus+'</div></div>'+
         '<div class="center-mono" style="margin-top:9px;">týdně '+weekly+' Kč · přibližně '+eggs+' vajec</div></div>'+
       '<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;">'+
-          '<div><div class="field-label">Pauza</div><div style="font-size:12.5px;margin-top:6px;">'+(state.paused?'Pozastaveno — dokud znovu nezapneš.':'Aktivní.')+'</div></div>'+
-          '<div class="switch-track pressable" data-action="toggle-pause" data-on="'+(!state.paused)+'"><div class="switch-knob"></div></div></div>'+
-        (state.paused? '<div class="hint mono" style="margin-top:9px;color:var(--accent-text);">Série se nezruší, jen se zmrazí do dalšího zapnutí.</div>' : '')+
+          '<div><div class="field-label">Pauza</div><div style="font-size:12.5px;margin-top:6px;">'+(hen.paused?'Pozastaveno — dokud znovu nezapneš.':'Aktivní.')+'</div></div>'+
+          '<div class="switch-track pressable" data-action="toggle-pause" data-on="'+(!hen.paused)+'"><div class="switch-knob"></div></div></div>'+
+        (hen.paused? '<div class="hint mono" style="margin-top:9px;color:var(--accent-text);">Série se nezruší, jen se zmrazí do dalšího zapnutí.</div>' : '')+
       '</div>'+
       '<div class="card"><div class="field-label">Doručení</div>'+
-        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;"><div style="font-size:13.5px;">'+escapeHtml(state.address)+'</div></div>'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;"><div style="font-size:13.5px;">'+escapeHtml(hen.address)+'</div></div>'+
         '<div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;"><div style="font-size:13.5px;">Den svozu</div><span class="mono" style="font-size:11px;color:var(--ink-soft);">Pátek</span></div></div>'+
       '<div class="card"><div class="field-label">Oznámení</div>'+
         '<div class="pressable" data-action="request-notif" style="margin-top:6px;"><div class="btn-primary" style="background:'+(notifPerm==='granted'?'var(--sage)':'var(--accent)')+';font-size:13.5px;padding:12px;">'+escapeHtml(notifLabel)+'</div></div>'+
@@ -599,10 +671,6 @@
         '<div class="pressable" data-action="advance-day" style="margin-top:10px;"><div class="btn-primary" style="background:var(--ink-soft);font-size:13px;padding:11px;">Posunout o den →</div></div>'+
         '<div class="pressable" data-action="reset-app"><div class="btn-secondary">Resetovat appku a začít znovu</div></div>'+
       '</div>';
-  }
-  function fmtFull(d){
-    var days=['neděle','pondělí','úterý','středa','čtvrtek','pátek','sobota'];
-    return days[d.getDay()]+' '+d.getDate()+'.'+(d.getMonth()+1)+'.';
   }
 
   // ============ tab bar ============
@@ -617,7 +685,7 @@
 
   // ============ dispatcher ============
   function renderAll(){
-    if(!state.onboarded){
+    if(!state.onboarded || showingOnboarding || !activeHen()){
       document.getElementById('view-onboarding').style.display = 'flex';
       document.getElementById('view-main').style.display = 'none';
       renderOnboarding();
@@ -631,43 +699,67 @@
     renderTabbar();
   }
 
+  function startOnboarding(mode){
+    obMode = mode;
+    var basedOnAddress = activeHen() ? activeHen().address : '';
+    obDraft = {henName:'Nuška', farm:'lipa', dailyAmount:20, address: basedOnAddress || ''};
+    obStep = 1;
+    showingOnboarding = true;
+    renderAll();
+  }
+
   // ============ events (delegated) ============
   document.addEventListener('click', function(e){
     var el = e.target.closest('[data-action]');
     if(!el) return;
     var action = el.getAttribute('data-action');
 
-    if(action==='select-farm'){ state.farm = el.getAttribute('data-farm'); renderOnboarding(); }
+    if(action==='select-farm'){ obDraft.farm = el.getAttribute('data-farm'); renderOnboarding(); }
     else if(action==='onb-next'){
       var nameEl = document.getElementById('ob-name');
-      state.henName = (nameEl && nameEl.value.trim()) || state.henName || 'Nuška';
+      obDraft.henName = (nameEl && nameEl.value.trim()) || obDraft.henName || 'Nuška';
       obStep = 2; renderOnboarding();
     }
     else if(action==='onb-back'){ obStep = 1; renderOnboarding(); }
+    else if(action==='onb-cancel'){ showingOnboarding = false; obMode = 'first'; renderAll(); }
     else if(action==='day-pill'){
       var hint = document.getElementById('ob-hint');
       if(hint && el.getAttribute('data-active')!=='true'){ hint.textContent = 'Zatím jde vybrat jen pátek — víc dní zvažujeme do budoucna.'; }
     }
     else if(action==='onb-finish'){
       var addrEl = document.getElementById('ob-address');
-      if(addrEl) state.address = addrEl.value.trim() || state.address;
+      if(addrEl) obDraft.address = addrEl.value.trim();
+      var id = state.nextHenId++;
+      var hen = freshHen(id, obDraft.henName, obDraft.farm, obDraft.dailyAmount, obDraft.address);
+      state.hens.push(hen);
+      state.activeHenId = id;
       state.onboarded = true;
-      window.__selDay = null;
+      state.activeTab = 'home';
+      showingOnboarding = false;
+      selDay = null;
       saveState();
       runTick();
       renderAll();
     }
     else if(action==='tab'){ state.activeTab = el.getAttribute('data-tab'); saveState(); renderAll(); }
-    else if(action==='select-home-day'){ window.__selDay = el.getAttribute('data-day'); renderHome(); }
-    else if(action==='filter'){ window.__actFilter = el.getAttribute('data-filter'); renderActivity(); }
-    else if(action==='amount-minus'){ state.dailyAmount = Math.max(10, state.dailyAmount-5); saveState(); renderSettings(); }
-    else if(action==='amount-plus'){ state.dailyAmount = Math.min(40, state.dailyAmount+5); saveState(); renderSettings(); }
-    else if(action==='toggle-pause'){ state.paused = !state.paused; saveState(); renderSettings(); }
-    else if(action==='advance-day'){ state.dayOffset += 1; window.__selDay=null; saveState(); runTick(); renderAll(); }
+    else if(action==='select-home-day'){ selDay = el.getAttribute('data-day'); renderHome(); }
+    else if(action==='filter'){ actFilter = el.getAttribute('data-filter'); renderActivity(); }
+    else if(action==='switch-hen'){
+      state.activeHenId = Number(el.getAttribute('data-hen-id'));
+      selDay = null;
+      saveState();
+      renderAll();
+    }
+    else if(action==='add-hen'){ startOnboarding('add'); }
+    else if(action==='amount-minus'){ var h1=activeHen(); h1.dailyAmount = Math.max(10, h1.dailyAmount-5); saveState(); renderSettings(); }
+    else if(action==='amount-plus'){ var h2=activeHen(); h2.dailyAmount = Math.min(40, h2.dailyAmount+5); saveState(); renderSettings(); }
+    else if(action==='toggle-pause'){ var h3=activeHen(); h3.paused = !h3.paused; saveState(); renderSettings(); }
+    else if(action==='advance-day'){ state.dayOffset += 1; selDay=null; saveState(); runTick(); renderAll(); }
     else if(action==='reset-app'){
-      if(window.confirm('Smazat appku a vrátit se k adopci? Tohle nejde vzít zpět.')){
+      if(window.confirm('Smazat appku (všechny slepičky) a vrátit se k adopci? Tohle nejde vzít zpět.')){
         state = JSON.parse(JSON.stringify(defaults));
-        obStep = 1; window.__selDay=null; window.__actFilter=null;
+        obStep = 1; obMode='first'; obDraft={henName:'Nuška', farm:'lipa', dailyAmount:20, address:''};
+        showingOnboarding=false; selDay=null; actFilter=null;
         saveState(); renderAll();
       }
     }
@@ -686,15 +778,26 @@
       document.getElementById('ob-amount-num').textContent = amt;
       document.getElementById('ob-weekly').textContent = amt*5;
       document.getElementById('ob-eggs').textContent = eggsPreview(amt);
-      state.dailyAmount = amt;
+      obDraft.dailyAmount = amt;
     }
-    else if(e.target.id==='ob-address'){ state.address = e.target.value; }
+    else if(e.target.id==='ob-address'){ obDraft.address = e.target.value; }
+  });
+
+  // rename fires on blur/Enter, not per-keystroke, so the input never loses
+  // focus to a mid-typing re-render
+  document.addEventListener('change', function(e){
+    if(e.target.id==='set-hen-name'){
+      var hen = activeHen();
+      var val = e.target.value.trim();
+      if(hen && val){ hen.henName = val; saveState(); renderAll(); }
+      else if(hen){ e.target.value = hen.henName; }
+    }
   });
 
   // ============ boot ============
   // the very first tick only runs once onboarding actually finishes (onb-finish),
   // so day one reflects the hen name / amount the user just chose, not the defaults
-  if(state.onboarded){ runTick(); }
+  if(state.onboarded && activeHen()){ runTick(); }
   renderAll();
 })();
 </script>
