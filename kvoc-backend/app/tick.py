@@ -38,6 +38,7 @@ def run_tick_for_hen(db: Session, hen: Hen, today: dt.date) -> None:
     again for a day already processed is a safe no-op for that day.
     """
     notifier = get_notification_provider()
+    device_token = hen.owner.fcm_token if hen.owner else None
 
     if today.weekday() < 5:  # Monday..Friday
         if hen.paused:
@@ -61,7 +62,7 @@ def run_tick_for_hen(db: Session, hen: Hen, today: dt.date) -> None:
             if existing is None:
                 msg = f"{hen.hen_name} {random.choice(FEED_MESSAGES)}"
                 db.add(FeedLogEntry(hen_id=hen.id, date=today, amount=hen.daily_amount, message=msg, is_bonus=False))
-                notifier.send(hen.id, f"-{hen.daily_amount} Kč", msg)
+                notifier.send(hen.id, device_token, f"-{hen.daily_amount} Kč", msg)
 
                 if random.random() < config.BONUS_CHANCE:
                     bonus_msg = (
@@ -69,7 +70,7 @@ def run_tick_for_hen(db: Session, hen: Hen, today: dt.date) -> None:
                         "Přidáme ho do páteční bedýnky."
                     )
                     db.add(FeedLogEntry(hen_id=hen.id, date=today, amount=0, message=bonus_msg, is_bonus=True))
-                    notifier.send(hen.id, "BONUS", bonus_msg)
+                    notifier.send(hen.id, device_token, "BONUS", bonus_msg)
 
                 if today.weekday() == config.DELIVERY_WEEKDAY:
                     monday = _monday_of(today)
@@ -90,7 +91,7 @@ def run_tick_for_hen(db: Session, hen: Hen, today: dt.date) -> None:
                         amount=total, eggs=eggs, status="transit",
                     ))
                     notifier.send(
-                        hen.id, "PÁTEK",
+                        hen.id, device_token, "PÁTEK",
                         f"Tenhle týden jsi {hen.hen_name} krmil. Dnes odpoledne dorazí {eggs} vajec.",
                     )
 
@@ -102,7 +103,7 @@ def run_tick_for_hen(db: Session, hen: Hen, today: dt.date) -> None:
     )
     if last_delivery is not None and (today - last_delivery.date).days >= 1:
         last_delivery.status = "delivered"
-        notifier.send(hen.id, "DORUČENO", f"{last_delivery.eggs} vajec právě dorazilo ke dveřím.")
+        notifier.send(hen.id, device_token, "DORUČENO", f"{last_delivery.eggs} vajec právě dorazilo ke dveřím.")
 
     db.commit()
 

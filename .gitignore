@@ -20,6 +20,10 @@ mobile-app/android/captures/
 *.jks
 mobile-app/android/key.properties
 
+# Firebase config for push notifications (see kvoc-backend/docs/NOTIFICATIONS.md) -
+# tied to your own Firebase project, not something to commit.
+mobile-app/android/app/google-services.json
+
 # iOS - same idea as the Android keystore above: signing material never
 # belongs in git. The ios/ project itself (Xcode project files) is committed;
 # mobile-app/ios/.gitignore (Capacitor's own template) handles Pods/build

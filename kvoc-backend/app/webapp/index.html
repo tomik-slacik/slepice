@@ -683,12 +683,42 @@
     });
   }
 
+  // ============ push notifications ============
+  // Only does anything inside the native app shell (Capacitor) with the
+  // push-notifications plugin actually built in - a plain browser tab (this
+  // same file, opened directly) just skips all of this, no error. See
+  // docs/NOTIFICATIONS.md for how the backend side (FCM) gets configured.
+  function registerPushIfNative(){
+    if (!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform())) return;
+    var Push = Capacitor.Plugins && Capacitor.Plugins.PushNotifications;
+    if (!Push) return;
+
+    Push.requestPermissions().then(function(res){
+      if (res.receive !== 'granted') return;
+      return Push.register();
+    }).catch(function(){});
+
+    Push.addListener('registration', function(tokenInfo){
+      api('/auth/device-token', {method:'POST', body: JSON.stringify({fcm_token: tokenInfo.value})}).catch(function(){});
+    });
+    Push.addListener('registrationError', function(err){
+      console.error('push registration failed', err);
+    });
+    Push.addListener('pushNotificationReceived', function(notification){
+      // app was open in the foreground when the push arrived - the OS tray
+      // won't show it in that case, so surface it the same way as every
+      // other in-app notice instead of silently dropping it
+      showToasts([{tag: (notification.title||'Kvoč').replace(/^Kvoč\s*·\s*/,''), body: notification.body||''}]);
+    });
+  }
+
   // ============ boot / auth flow ============
   function boot(){
     token = loadToken();
     if(!token){ authMode='login'; renderAuth(); showView('auth'); return; }
     api('/auth/me').then(function(m){
       me = m;
+      registerPushIfNative();
       return api('/farms');
     }).then(function(f){
       farms = f;
@@ -724,6 +754,12 @@
   }
 
   function doLogout(){
+    // best-effort, and must happen *before* token is cleared below - this
+    // is an authenticated call, and its whole point is making sure this
+    // device stops getting pushes meant for whoever logs in here next
+    if (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && token) {
+      api('/auth/device-token', {method:'POST', body: JSON.stringify({fcm_token: ''})}).catch(function(){});
+    }
     saveToken(null); token=null; me=null; hen=null; wallet=null; feedLog=[]; deliveries=[];
     authMode='login'; renderAuth(); showView('auth');
   }

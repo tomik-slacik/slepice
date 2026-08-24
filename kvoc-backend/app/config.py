@@ -52,6 +52,14 @@ if not os.environ.get("KVOC_JWT_SECRET"):
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_DAYS = 7
 
+# ---- notifications ----
+# Which NotificationProvider app/integrations/notifications.py hands back.
+# "console" (the safe default) never talks to any external service, just
+# prints what would be sent. "fcm" sends a real push via Firebase Cloud
+# Messaging and needs KVOC_FIREBASE_CREDENTIALS_JSON - see docs/NOTIFICATIONS.md.
+NOTIFICATION_PROVIDER = os.environ.get("KVOC_NOTIFICATION_PROVIDER", "console")
+FIREBASE_CREDENTIALS_JSON = os.environ.get("KVOC_FIREBASE_CREDENTIALS_JSON", "")
+
 # ---- payments ----
 # Which PaymentProvider app/integrations/payments.py hands back. "mock" (the
 # safe default) never touches real money. "stripe" requires KVOC_STRIPE_SECRET_KEY

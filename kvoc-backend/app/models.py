@@ -19,6 +19,14 @@ class User(Base):
     # registering or logging in touches Stripe.
     stripe_customer_id = Column(String, nullable=True)
 
+    # Set once the app registers for push notifications (see
+    # POST /auth/device-token and integrations/notifications.py). Null until
+    # then - the daily tick just skips sending anything for that user.
+    # One token per user (last registration wins) - good enough for a single
+    # phone per account; a user signed in on two devices only gets pushes on
+    # whichever registered most recently.
+    fcm_token = Column(String, nullable=True)
+
     hens = relationship("Hen", back_populates="owner", cascade="all, delete-orphan")
 
 

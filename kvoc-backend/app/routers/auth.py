@@ -39,3 +39,20 @@ def me(current_user: models.User = Depends(get_current_user)):
     out = schemas.UserOut.model_validate(current_user)
     out.has_saved_payment_method = bool(current_user.stripe_customer_id)
     return out
+
+
+@router.post("/device-token", status_code=204)
+def register_device_token(
+    payload: schemas.DeviceTokenIn,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    """Called by the mobile app right after it gets an FCM registration
+    token (see mobile-app's push-notifications.js), so the next daily tick
+    can actually push to this device instead of just logging to the
+    server console. An empty string clears it (e.g. on logout) so a stale
+    token on a device the user signed out of doesn't keep receiving
+    someone else's notifications.
+    """
+    current_user.fcm_token = payload.fcm_token or None
+    db.commit()

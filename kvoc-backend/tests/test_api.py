@@ -51,6 +51,39 @@ def test_health(client):
     assert r.json() == {"status": "ok"}
 
 
+def test_device_token_registers_and_clears(client):
+    from app import models
+    from app.database import SessionLocal
+
+    headers, email = _new_user_headers(client)
+
+    r = client.post("/auth/device-token", json={"fcm_token": "fake-fcm-token-abc"}, headers=headers)
+    assert r.status_code == 204
+
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.email == email).first()
+        assert user.fcm_token == "fake-fcm-token-abc"
+    finally:
+        db.close()
+
+    # empty string clears it - the mobile app does this on logout, so a
+    # signed-out device doesn't keep receiving someone else's notifications
+    r = client.post("/auth/device-token", json={"fcm_token": ""}, headers=headers)
+    assert r.status_code == 204
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.email == email).first()
+        assert user.fcm_token is None
+    finally:
+        db.close()
+
+
+def test_device_token_requires_auth(client):
+    r = client.post("/auth/device-token", json={"fcm_token": "x"})
+    assert r.status_code == 401
+
+
 def test_farms_are_seeded(client):
     r = client.get("/farms")
     assert r.status_code == 200

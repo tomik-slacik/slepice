@@ -24,6 +24,13 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
 
 
+class DeviceTokenIn(BaseModel):
+    # The FCM registration token the mobile app gets back from
+    # PushNotifications.register() (see mobile-app's push-notifications.js).
+    # Send an empty string to unregister (e.g. on logout).
+    fcm_token: str = Field(..., max_length=4096)
+
+
 class FarmOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
