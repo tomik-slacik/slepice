@@ -24,7 +24,7 @@ for _stream in (sys.stdout, sys.stderr):
         except Exception:
             pass
 
-from . import models  # noqa: F401  (registers models on Base before init_db)
+from . import config, models  # noqa: F401  (models import registers them on Base before init_db)
 from .database import SessionLocal, init_db
 from .routers import admin, auth, farms, hens, wallet
 from .scheduler import start_scheduler, stop_scheduler
@@ -51,10 +51,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# TODO: lock this down to the real frontend's origin before deploying anywhere public.
+# See config.CORS_ORIGINS - the bundled webapp is same-origin and never
+# needs this; it's for any separately-hosted client. Set KVOC_CORS_ORIGINS
+# before deploying anywhere the wallet/payment endpoints matter.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=config.CORS_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )

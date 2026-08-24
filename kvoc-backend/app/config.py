@@ -22,8 +22,19 @@ SCHEDULER_TIMEZONE = "Europe/Prague"
 
 # ---- database ----
 # Overridable so tests (and any future deployment) can point at a different
-# database without touching code - see tests/test_api.py.
+# database without touching code - see tests/test_api.py. In production
+# (docs/DEPLOYMENT.md) this should be a real Postgres URL, not sqlite - a
+# deployed container's filesystem is not guaranteed to survive a restart.
 DATABASE_URL = os.environ.get("KVOC_DATABASE_URL", "sqlite:///./kvoc.db")
+
+# ---- CORS ----
+# The bundled webapp (app/webapp/) is served from the same origin as the
+# API, so it never needs this. It exists for any *other* client (a
+# separately-hosted frontend, a mobile app pointed at a real deployment).
+# "*" is fine for local dev and low-stakes demos; set to your real
+# frontend's origin(s), comma-separated, before deploying anywhere the
+# wallet/payment endpoints matter.
+CORS_ORIGINS = [o.strip() for o in os.environ.get("KVOC_CORS_ORIGINS", "*").split(",") if o.strip()]
 
 # ---- auth ----
 # TODO: set KVOC_JWT_SECRET to a real, stable secret before deploying

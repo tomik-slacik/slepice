@@ -56,6 +56,11 @@ Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
   Android projekt až na jeden krok (Android SDK, viz jeho README); iOS
   potřebuje Mac. Návod na zbytek cesty (účty, review) je v
   [`docs/APP_STORE_GUIDE.md`](docs/APP_STORE_GUIDE.md).
+- **Appka běžící někde jinde než na tomhle počítači.** `127.0.0.1` vidí
+  jen tenhle stroj — pro sdílení s kýmkoliv jiným je potřeba skutečné
+  nasazení. `Dockerfile` a `render.yaml` na to jsou připravené a
+  ověřené proti aktuální dokumentaci, ale založení účtu u poskytovatele
+  je na tobě — viz [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 - **Skutečné farmy ani rozvoz.** To je byznys/logistická stránka věci —
   checklist je v [`docs/BUSINESS_CHECKLIST.md`](docs/BUSINESS_CHECKLIST.md).
 

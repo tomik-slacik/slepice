@@ -1,0 +1,31 @@
+# Render Blueprint - deploys the Kvoč API (kvoc-backend/) plus a managed
+# Postgres database. See kvoc-backend/docs/DEPLOYMENT.md for the full
+# walkthrough (this file gets you most of the way there, but Render still
+# needs you to connect your own account - that part has to be you).
+#
+# This has NOT been deployed or run against a real Render account from
+# here - the exact keys below are checked against Render's current
+# Blueprint spec (render.com/docs/blueprint-spec), but double-check your
+# dashboard if something doesn't match when you actually deploy.
+services:
+  - name: kvoc-api
+    type: web
+    runtime: docker
+    plan: free
+    dockerfilePath: ./kvoc-backend/Dockerfile
+    dockerContext: ./kvoc-backend
+    envVars:
+      - key: KVOC_JWT_SECRET
+        generateValue: true
+      - key: KVOC_DATABASE_URL
+        fromDatabase:
+          name: kvoc-db
+          property: connectionString
+      - key: KVOC_PAYMENT_PROVIDER
+        value: mock
+      - key: KVOC_CORS_ORIGINS
+        value: "*"
+
+databases:
+  - name: kvoc-db
+    plan: free
