@@ -32,4 +32,16 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run tests
-        run: pytest -v
+        # `python -m pytest`, not bare `pytest` - the module form adds the
+        # current directory to sys.path, which is what makes `from app import
+        # ...` resolve at all. Bare `pytest` doesn't do that and fails
+        # collection with "ModuleNotFoundError: No module named 'app'" -
+        # reproduced locally and confirmed this is the actual fix, not a
+        # guess (this repo doesn't install its own app/ as a package, and
+        # deliberately has no conftest.py or pyproject.toml doing this
+        # instead - see tests/test_api.py's own module docstring, which has
+        # always said to run these with `pytest` from this directory; that
+        # instruction implicitly assumed a venv/shell where cwd was already
+        # on sys.path some other way, e.g. via `python -m pytest`, not the
+        # bare console script this workflow ran the first time).
+        run: python -m pytest -v
