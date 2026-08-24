@@ -105,7 +105,8 @@
   .hen-switcher{display:flex;gap:8px;overflow-x:auto;padding-bottom:1px;}
   .hen-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:5px;padding:8px 12px;border-radius:4px;border:1.5px solid var(--line);background:var(--surface);}
   .hen-chip[data-active="true"]{border-color:var(--accent);background:var(--surface-2);}
-  .hc-avatar{width:24px;height:24px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;}
+  .hc-avatar{width:24px;height:24px;border-radius:50%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;position:relative;}
+  .hc-pause-dot{position:absolute;top:-2px;right:-2px;width:9px;height:9px;border-radius:50%;background:var(--accent-text);border:1.5px solid var(--surface);}
   .hen-chip[data-active="true"] .hc-avatar{background:var(--accent);}
   .hc-name{font-size:10px;font-weight:600;max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-soft);}
   .hen-chip[data-active="true"] .hc-name{color:var(--ink);}
@@ -155,11 +156,10 @@
   .stub[data-type="summary"] .tag{color:var(--accent-text);}
   .empty-note{font-size:13px;color:var(--ink-soft);text-align:center;padding:24px 12px;}
 
-  .badge-row{display:flex;gap:10px;overflow-x:auto;padding:2px 2px 4px;}
-  .badge-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:5px;width:72px;opacity:.4;}
+  .badge-row{display:flex;gap:10px;overflow-x:auto;padding:6px 2px 4px;}
+  .badge-chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:5px;width:72px;opacity:.45;}
   .badge-chip[data-on="true"]{opacity:1;}
-  .badge-medal{width:40px;height:40px;border-radius:50%;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;background:var(--surface);}
-  .badge-chip[data-on="true"] .badge-medal{border-color:var(--accent);background:var(--surface-2);}
+  .badge-medal{width:40px;height:40px;display:flex;align-items:center;justify-content:center;}
   .badge-label{font-size:9px;text-align:center;line-height:1.3;color:var(--ink-soft);}
   .badge-chip[data-on="true"] .badge-label{color:var(--ink);font-weight:600;}
 
@@ -167,7 +167,22 @@
   .hist-val{font-size:11px;fill:var(--accent-text);font-weight:600;}
   .hist-lbl{font-size:9px;fill:var(--ink-soft);}
 
-  .gift-cert{background:var(--surface-2);border:1.5px dashed var(--line);padding:14px;font-size:11.5px;line-height:1.6;margin-top:8px;}
+  .status-chip{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.05em;color:var(--accent-text);background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:2px 8px;margin-left:8px;vertical-align:middle;white-space:nowrap;}
+
+  .voucher{position:relative;background:var(--surface-2);border:1.5px dashed var(--line);border-radius:2px;padding:18px 16px 16px;margin-top:10px;overflow:visible;}
+  .voucher::before,.voucher::after{content:'';position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:var(--surface);border:1px solid var(--line);transform:translateY(-50%);}
+  .voucher::before{left:-8px;}
+  .voucher::after{right:-8px;}
+  .voucher-stamp{position:absolute;top:-16px;right:8px;transform:rotate(-8deg);}
+  .voucher-row{margin-bottom:12px;}
+  .voucher-row:last-child{margin-bottom:0;}
+  .voucher-name{font-family:'Bitter',serif;font-weight:700;font-size:17px;}
+  .voucher-from{font-family:'Bitter',serif;font-weight:600;font-size:13.5px;color:var(--ink-soft);}
+  .voucher-msg{font-size:12.5px;color:var(--ink-soft);font-style:italic;line-height:1.5;padding-left:10px;border-left:2px solid var(--line);}
+  .voucher-divider{border-top:1px dashed var(--line);margin:14px 0;}
+  .voucher-amount{display:flex;align-items:baseline;gap:6px;justify-content:center;}
+  .voucher-note{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);line-height:1.6;text-align:center;margin-top:10px;}
+  .mini-stamp{display:inline-block;transform:rotate(-6deg);flex-shrink:0;}
 
   .round-btn{width:38px;height:38px;border-radius:50%;background:var(--surface-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .stepper-row{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:10px;}
@@ -426,9 +441,9 @@
 
   function badgesHtml(hen){
     var stats = henStats(hen);
-    var chips = BADGES.map(function(b){
+    var chips = BADGES.map(function(b, idx){
       var on = b.check(stats);
-      return '<div class="badge-chip" data-on="'+on+'"><div class="badge-medal">'+ICO.egg+'</div><span class="badge-label mono">'+escapeHtml(b.label)+'</span></div>';
+      return '<div class="badge-chip" data-on="'+on+'"><div class="badge-medal">'+medalSvg(on, idx)+'</div><span class="badge-label mono">'+escapeHtml(b.label)+'</span></div>';
     }).join('');
     return '<div><div class="field-label">Úspěchy</div><div class="badge-row">'+chips+'</div></div>';
   }
@@ -475,8 +490,17 @@
   function giftCardHtml(){
     if(giftGenerated){
       return '<div class="card"><div class="field-label">Dárkový poukaz</div>'+
-        '<div class="gift-cert mono">'+escapeHtml(giftCertificateText()).replace(/\n/g,'<br>')+'</div>'+
-        '<div class="pressable" data-action="gift-copy" style="margin-top:10px;"><div class="btn-primary" style="font-size:13px;padding:11px;">Kopírovat text</div></div>'+
+        '<div class="voucher">'+
+          '<div class="voucher-stamp">'+stampSvg('DÁRKOVÝ POUKAZ','Kvoč',100)+'</div>'+
+          '<div class="voucher-row"><div class="field-label" style="margin-bottom:2px;">Pro</div><div class="voucher-name">'+escapeHtml(giftDraft.recipient||'—')+'</div></div>'+
+          '<div class="voucher-row"><div class="field-label" style="margin-bottom:2px;">Od</div><div class="voucher-from">'+escapeHtml(giftDraft.gifter||'—')+'</div></div>'+
+          (giftDraft.message ? '<div class="voucher-row voucher-msg">'+escapeHtml(giftDraft.message)+'</div>' : '')+
+          '<div class="voucher-divider"></div>'+
+          '<div class="voucher-amount"><span class="amount-num" style="font-size:32px;">'+giftDraft.amount+'</span><span class="amount-unit">Kč / den</span></div>'+
+          '<div class="center-mono">přibližně '+eggsPreview(giftDraft.amount)+' vajec týdně</div>'+
+          '<div class="voucher-note">Uplatnění: otevři appku Kvoč, zvol „Adoptovat slepičku“<br>a nastav denní příspěvek na '+giftDraft.amount+' Kč.</div>'+
+        '</div>'+
+        '<div class="pressable" data-action="gift-copy" style="margin-top:14px;"><div class="btn-primary" style="font-size:13px;padding:11px;">Kopírovat text</div></div>'+
         '<div class="pressable" data-action="gift-close" style="margin-top:6px;"><div class="btn-secondary">Zavřít</div></div>'+
       '</div>';
     }
@@ -558,8 +582,19 @@
     egg: '<svg viewBox="0 0 100 130" width="16" height="21"><path d="M50,4 C74,4 90,40 90,78 C90,108 72,126 50,126 C28,126 10,108 10,78 C10,40 26,4 50,4 Z" style="fill:var(--accent)"/></svg>',
     home: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 11 12 4 20.5 11"/><path d="M5.5 9.5 V20 H18.5 V9.5"/></svg>',
     list: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="17" x2="19" y2="17"/></svg>',
-    sliders: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="var(--surface)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="9" cy="12" r="2" fill="var(--surface)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="var(--surface)"/></svg>',
-    hen: '<svg viewBox="0 0 220 190" width="150" height="130" role="img" aria-label="Ilustrace slepičky">'+
+    sliders: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="var(--surface)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="9" cy="12" r="2" fill="var(--surface)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="var(--surface)"/></svg>'
+  };
+
+  // hen illustration - sad=true droops the head, dims the comb/wattle and
+  // closes the eye. Same silhouette either way so it still reads as "the
+  // same hen", just having a bad day (tied to hen.paused).
+  function henSvg(sad){
+    var eye = sad
+      ? '<path d="M160.5,61 Q165,65.5 169.5,61" style="stroke:var(--ink);stroke-width:2.2" fill="none" stroke-linecap="round"/>'
+      : '<circle cx="165" cy="60" r="3.5" style="fill:var(--ink)"/>';
+    var combOpacity = sad ? '.45' : '1';
+    var headTransform = sad ? ' transform="rotate(14 140 88)"' : '';
+    return '<svg viewBox="0 0 220 190" width="150" height="130" role="img" aria-label="'+(sad?'Ilustrace smutné slepičky':'Ilustrace slepičky')+'">'+
       '<ellipse cx="95" cy="168" rx="70" ry="9" style="fill:var(--line);opacity:.5"/>'+
       '<path d="M50,92 C22,76 14,44 34,18 C42,52 54,74 66,96 Z" style="fill:var(--ink-soft);opacity:.5"/>'+
       '<path d="M58,90 C34,70 28,42 46,20 C52,50 62,70 72,94 Z" style="fill:var(--feather)"/>'+
@@ -567,12 +602,59 @@
       '<line x1="112" y1="148" x2="119" y2="167" style="stroke:var(--yolk);stroke-width:5" stroke-linecap="round"/>'+
       '<ellipse cx="100" cy="112" rx="58" ry="44" style="fill:var(--feather)"/>'+
       '<path d="M60,100 Q100,120 140,96" style="stroke:var(--ink-soft);stroke-width:1.5;opacity:.35" fill="none"/>'+
-      '<circle cx="158" cy="64" r="27" style="fill:var(--feather)"/>'+
-      '<circle cx="148" cy="41" r="7" style="fill:var(--accent)"/><circle cx="159" cy="36" r="8" style="fill:var(--accent)"/><circle cx="170" cy="41" r="7" style="fill:var(--accent)"/>'+
-      '<ellipse cx="171" cy="83" rx="5" ry="8" style="fill:var(--accent)"/>'+
-      '<polygon points="183,61 199,68 183,76" style="fill:var(--yolk)"/>'+
-      '<circle cx="165" cy="60" r="3.5" style="fill:var(--ink)"/></svg>'
-  };
+      '<g'+headTransform+'>'+
+        '<circle cx="158" cy="64" r="27" style="fill:var(--feather)"/>'+
+        '<g style="opacity:'+combOpacity+'"><circle cx="148" cy="41" r="7" style="fill:var(--accent)"/><circle cx="159" cy="36" r="8" style="fill:var(--accent)"/><circle cx="170" cy="41" r="7" style="fill:var(--accent)"/></g>'+
+        '<ellipse cx="171" cy="83" rx="5" ry="8" style="fill:var(--accent);opacity:'+combOpacity+'"/>'+
+        '<polygon points="183,61 199,68 183,76" style="fill:var(--yolk)"/>'+
+        eye+
+      '</g></svg>';
+  }
+
+  // achievement medal - procedural "stamped coin": reeded edge, double ring,
+  // checkmark when unlocked / blank dot when not. rot gives each medal a
+  // slightly different hand-stamped angle.
+  var MEDAL_ROT = [-6, 5, -3, 8, -7, 3, 6, -4];
+  function medalSvg(on, idx){
+    var rot = MEDAL_ROT[idx % MEDAL_ROT.length];
+    var r=15.5, cx=20, cy=20, ticks=16, marks=[];
+    for(var i=0;i<ticks;i++){
+      var a = (i/ticks)*Math.PI*2;
+      var x1=(cx+Math.cos(a)*(r+1)).toFixed(1), y1=(cy+Math.sin(a)*(r+1)).toFixed(1);
+      var x2=(cx+Math.cos(a)*(r+3.4)).toFixed(1), y2=(cy+Math.sin(a)*(r+3.4)).toFixed(1);
+      marks.push('<line x1="'+x1+'" y1="'+y1+'" x2="'+x2+'" y2="'+y2+'"/>');
+    }
+    var ring = on ? 'var(--accent)' : 'var(--line)';
+    var fill = on ? 'var(--surface-2)' : 'var(--surface)';
+    var center = on
+      ? '<path d="M13.5,20 L18,24.5 L27,14.5" fill="none" stroke="var(--accent)" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>'
+      : '<circle cx="20" cy="20" r="2.4" fill="var(--line)"/>';
+    return '<svg viewBox="0 0 40 40" width="40" height="40" style="overflow:visible;transform:rotate('+rot+'deg)">'+
+      '<g stroke="'+ring+'" stroke-width="1.2" opacity="'+(on?'0.9':'0.5')+'">'+marks.join('')+'</g>'+
+      '<circle cx="20" cy="20" r="'+r+'" fill="'+fill+'" stroke="'+ring+'" stroke-width="1.6"/>'+
+      '<circle cx="20" cy="20" r="'+(r-3.2)+'" fill="none" stroke="'+ring+'" stroke-width="0.8" opacity="0.7"/>'+
+      center+
+    '</svg>';
+  }
+
+  // rubber-stamp mark: circular caption running along the top arc + a word
+  // stamped in the middle. Used on the gift voucher and as a little
+  // "confirmed" mark once a delivery actually arrives.
+  var stampIdSeq = 0;
+  function stampSvg(caption, word, size){
+    size = size || 92;
+    var r = size*0.42, cx = size/2, cy = size/2;
+    var pid = 'stampArc'+(stampIdSeq++);
+    return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size+'" style="overflow:visible">'+
+      '<defs><path id="'+pid+'" d="M '+(cx-r)+','+cy+' a '+r+','+r+' 0 1,1 '+(2*r)+',0"/></defs>'+
+      '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" style="stroke:var(--accent);stroke-width:1.6;opacity:.85"/>'+
+      '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-4.5)+'" fill="none" style="stroke:var(--accent);stroke-width:1;opacity:.6"/>'+
+      '<text style="font-family:\'IBM Plex Mono\',monospace;font-size:'+(size*0.078).toFixed(1)+'px;font-weight:600;letter-spacing:1.5px;fill:var(--accent);">'+
+        '<textPath href="#'+pid+'" startOffset="50%" text-anchor="middle">'+escapeHtml(caption)+'</textPath>'+
+      '</text>'+
+      '<text x="'+cx+'" y="'+(cy+size*0.1)+'" text-anchor="middle" style="font-family:\'Rye\',serif;font-size:'+(size*0.24).toFixed(1)+'px;fill:var(--accent);">'+escapeHtml(word)+'</text>'+
+    '</svg>';
+  }
 
   // ============ hen switcher (shared by Home + Settings) ============
   function henSwitcherHtml(){
@@ -580,7 +662,7 @@
     var chips = state.hens.map(function(h){
       var active = h.id === state.activeHenId;
       return '<div class="hen-chip pressable" data-action="switch-hen" data-hen-id="'+h.id+'" data-active="'+active+'">'+
-        '<div class="hc-avatar">'+ICO.egg+'</div><span class="hc-name mono">'+escapeHtml(h.henName)+'</span></div>';
+        '<div class="hc-avatar">'+ICO.egg+(h.paused?'<span class="hc-pause-dot"></span>':'')+'</div><span class="hc-name mono">'+escapeHtml(h.henName)+'</span></div>';
     }).join('');
     return '<div class="hen-switcher">'+chips+'</div>';
   }
@@ -671,7 +753,10 @@
       deliveryHtml =
         '<div class="card">'+
           '<div class="app-eyebrow">Pátek '+fmtDateHuman(last.date)+'</div>'+
-          '<div class="egg-summary-num" style="margin-top:6px;"><span class="n">'+last.eggs+'</span><span class="u">vajec</span></div>'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;">'+
+            '<div class="egg-summary-num" style="margin-top:6px;"><span class="n">'+last.eggs+'</span><span class="u">vajec</span></div>'+
+            (reachedDelivered ? '<div class="mini-stamp">'+stampSvg('DORUČENO','Kvoč',56)+'</div>' : '')+
+          '</div>'+
           '<div class="app-sub">z tvého příspěvku '+last.amount+' Kč za ten týden</div>'+
           '<div class="stepper">'+
             step('ready','PŘIPRAVENO',true)+
@@ -686,7 +771,7 @@
       henSwitcherHtml()+
       '<div class="topbar"><div><div class="app-eyebrow">'+greeting()+'</div><div class="app-h1" style="font-size:23px;margin-top:2px;">Ahoj</div></div>'+
         '<div class="avatar">'+ICO.egg+'</div></div>'+
-      '<div class="card hen-card">'+ICO.hen+'<div class="hen-name">'+escapeHtml(hen.henName)+'</div>'+
+      '<div class="card hen-card">'+henSvg(hen.paused)+'<div class="hen-name">'+escapeHtml(hen.henName)+(hen.paused?'<span class="status-chip">POZASTAVENO</span>':'')+'</div>'+
         '<div class="hen-meta">'+escapeHtml(farmName(hen.farm))+'</div></div>'+
       '<div><div class="field-label">Tento týden</div><div class="day-row">'+dayChips+'</div></div>'+
       '<div class="reveal-panel"><div class="reveal-top"><span>'+selDayObj.label+' '+fmtDateHuman(selDayObj.key)+'</span><span>'+amountLbl+'</span></div>'+
@@ -766,7 +851,7 @@
       '<div class="field-label" style="margin-top:16px;">Ostatní slepičky</div>'+
       others.map(function(h){
         return '<div class="hen-row pressable" data-action="switch-hen" data-hen-id="'+h.id+'">'+
-          '<div><div class="farm-name" style="font-size:14px;">'+escapeHtml(h.henName)+'</div><div class="farm-meta">'+escapeHtml(farmName(h.farm))+'</div></div>'+
+          '<div><div class="farm-name" style="font-size:14px;">'+escapeHtml(h.henName)+(h.paused?'<span class="status-chip">POZASTAVENO</span>':'')+'</div><div class="farm-meta">'+escapeHtml(farmName(h.farm))+'</div></div>'+
           '<span class="mono" style="font-size:10.5px;color:var(--accent-text);">přepnout</span></div>';
       }).join('')
     ) : '';
