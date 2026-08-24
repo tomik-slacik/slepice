@@ -79,6 +79,24 @@ npx cap add ios                # funguje i na Windows - jen šablonové soubory
 Založení účtu u cloudové CI služby i Apple Developer Program je na tobě —
 obojí jsou reálná konta a/nebo platby, které bych za tebe neměl zakládat.
 
+### Codemagic už je připravený - `../codemagic.yaml`
+
+V kořeni repozitáře je hotová konfigurace pro [Codemagic](https://codemagic.io/)
+se dvěma workflow:
+
+1. **`ios-simulator-build`** — funguje **hned po připojení repozitáře, bez
+   Apple účtu a bez platby.** Jen ověří, že se iOS projekt doopravdy
+   zkompiluje. Tohle si vyzkoušej jako první, ať víš, že projekt je v
+   pořádku, než začneš platit za cokoliv dalšího.
+2. **`ios-release`** — skutečný podepsaný build pro TestFlight. Potřebuje
+   Apple Developer Program a v Codemagicu (Team settings → Integrations →
+   App Store Connect) vytvořený API klíč pojmenovaný `kvoc_app_store_connect`
+   (nebo si to jméno v `codemagic.yaml` změň na svoje).
+
+Postup: založ si účet na [codemagic.io](https://codemagic.io/) → připoj
+tenhle GitHub repozitář → Codemagic si `codemagic.yaml` najde sám → spusť
+`ios-simulator-build`.
+
 ## Lokální nástroje v `.tools/`
 
 Node.js, JDK a teď i Android SDK (`platform-tools`, `platforms/android-36`,

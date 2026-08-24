@@ -1,0 +1,107 @@
+workflows:
+
+  # Beží hned, jakmile připojíš tenhle repozitář do Codemagicu - žádný Apple
+  # Developer účet, žádný podpis, žádné nastavování. Jen ověří, že se iOS
+  # projekt doopravdy zkompiluje (build pro iOS Simulator, bez podpisu).
+  # Je to první rozumný krok předtím, než začneš platit za cokoliv.
+  ios-simulator-build:
+    name: Kvoč iOS - simulator build (bez Apple účtu)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      vars:
+        XCODE_PROJECT: "App.xcodeproj"
+        XCODE_SCHEME: "App"
+      xcode: latest
+      node: latest
+    scripts:
+      - name: Instalace závislostí (Capacitor CLI)
+        script: |
+          cd mobile-app
+          npm ci
+      - name: Promítnout www/ do iOS projektu
+        script: |
+          cd mobile-app
+          npx cap sync ios
+      - name: Sestavit pro iOS Simulator (bez podpisu)
+        script: |
+          cd mobile-app/ios/App
+          xcodebuild \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO
+    artifacts:
+      - mobile-app/ios/App/build/Build/Products/**/*.app
+    publishing:
+      email:
+        recipients:
+          - tslacik@gmail.com
+        notify:
+          success: true
+          failure: true
+
+  # Skutečný podepsaný build pro TestFlight/App Store. Potřebuje, abys měl
+  # (1) Apple Developer Program účet (99 $/rok) a (2) v Codemagicu -> Team
+  # settings -> Integrations -> App Store Connect vytvořený API klíč
+  # pojmenovaný přesně "kvoc_app_store_connect" (nebo si to jméno změň i
+  # tady dole u "integrations:"). Bez toho tenhle workflow spustit nejde -
+  # to je v pořádku, "ios-simulator-build" výše funguje bez toho hned teď.
+  ios-release:
+    name: Kvoč iOS - podepsaný release (TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: kvoc_app_store_connect
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: cz.kvoc.app
+      vars:
+        XCODE_PROJECT: "App.xcodeproj"
+        XCODE_SCHEME: "App"
+        # Najdeš v App Store Connect > appka > General > App Information -
+        # ale až tam appku jednou ručně založíš, protože zatím tam žádná
+        # neexistuje.
+        APP_STORE_APP_ID: 0000000000
+      xcode: latest
+      node: latest
+    scripts:
+      - name: Instalace závislostí (Capacitor CLI)
+        script: |
+          cd mobile-app
+          npm ci
+      - name: Promítnout www/ do iOS projektu
+        script: |
+          cd mobile-app
+          npx cap sync ios
+      - name: Nastavit podpis přes Xcode
+        script: |
+          xcode-project use-profiles
+      - name: Zvýšit číslo buildu
+        script: |
+          cd $CM_BUILD_DIR/mobile-app/ios/App
+          agvtool new-version -all $BUILD_NUMBER
+          agvtool new-marketing-version 1.0.$BUILD_NUMBER
+      - name: Sestavit podepsané .ipa
+        script: |
+          cd $CM_BUILD_DIR/mobile-app/ios/App
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - mobile-app/ios/App/build/ios/ipa/*.ipa
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+    publishing:
+      email:
+        recipients:
+          - tslacik@gmail.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        submit_to_app_store: false
