@@ -33,6 +33,22 @@
 
   /* ---------- onboarding ---------- */
   #view-onboarding{flex:1;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top,0px) + 26px) 22px 24px;gap:18px;}
+
+  /* ---------- splash ---------- */
+  #view-splash{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;padding:24px;text-align:center;cursor:pointer;user-select:none;
+  }
+  .splash-word{font-family:'Rye',serif;font-size:52px;color:var(--accent-text);line-height:1;}
+  .splash-tag{font-size:13.5px;color:var(--ink-soft);max-width:260px;}
+  .splash-hint{
+    position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink-soft);opacity:.7;
+  }
+  @keyframes splash-hint-pulse{0%,100%{opacity:.4;}50%{opacity:.9;}}
+  .splash-hint{animation:splash-hint-pulse 2.2s ease-in-out infinite;}
+  @media (prefers-reduced-motion: reduce){ .splash-hint{animation:none;opacity:.7;} }
   .topbar{display:flex;align-items:center;justify-content:space-between;}
   .icon-btn{color:var(--ink);cursor:pointer;padding:4px;}
   .app-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-text);}
@@ -233,6 +249,7 @@
 
 <div id="shell">
   <div id="toast-host"></div>
+  <div id="view-splash" class="pressable" data-action="splash-continue"></div>
   <div id="view-onboarding"></div>
   <div id="view-main">
     <div id="main-content"></div>
@@ -253,19 +270,42 @@
   // capacity is illustrative for this demo (no real backend booking against
   // it) - same numbers as kvoc-backend/app/seed.py so the two stay honest
   // twins of each other, not just coincidentally similar
+  // animalOfferings mirrors kvoc-backend/app/seed.py's FarmAnimalOffering
+  // rows, kept in sync by hand - same 3 farms offer the same combos there.
   var FARMS = [
-    {key:'lipa',      name:'Farma U Lípy',      style:'volný výběh', town:'Sázava',      lat:49.8564, lng:14.8636, capacity:60},
-    {key:'dvur',      name:'Dvůr Na Kopci',     style:'bio chov',    town:'Benešov',     lat:49.7847, lng:14.6873, capacity:40},
-    {key:'polana',    name:'Polana Farm',       style:'volný výběh', town:'Neveklov',    lat:49.7994, lng:14.5589, capacity:80},
-    {key:'ricany',    name:'Zahrada Pod Lesem', style:'bio chov',    town:'Říčany',      lat:49.9917, lng:14.6650, capacity:30},
-    {key:'beroun',    name:'Farma Beránek',     style:'volný výběh', town:'Beroun',      lat:49.9639, lng:14.0725, capacity:50},
-    {key:'kladno',    name:'Dvůr U Rybníka',    style:'bio chov',    town:'Kladno',      lat:50.1477, lng:14.1030, capacity:35},
-    {key:'melnik',    name:'Vinný Dvůr',        style:'volný výběh', town:'Mělník',      lat:50.3520, lng:14.4739, capacity:45},
-    {key:'kutnahora', name:'Stříbrná Farma',    style:'bio chov',    town:'Kutná Hora',  lat:49.9481, lng:15.2683, capacity:25}
+    {key:'lipa',      name:'Farma U Lípy',      style:'volný výběh', town:'Sázava',      lat:49.8564, lng:14.8636, capacity:60, animalOfferings:[{species:'cow', product:'milk', capacity:25}]},
+    {key:'dvur',      name:'Dvůr Na Kopci',     style:'bio chov',    town:'Benešov',     lat:49.7847, lng:14.6873, capacity:40, animalOfferings:[{species:'goat', product:'milk', capacity:20}]},
+    {key:'polana',    name:'Polana Farm',       style:'volný výběh', town:'Neveklov',    lat:49.7994, lng:14.5589, capacity:80, animalOfferings:[{species:'sheep', product:'wool', capacity:15}]},
+    {key:'ricany',    name:'Zahrada Pod Lesem', style:'bio chov',    town:'Říčany',      lat:49.9917, lng:14.6650, capacity:30, animalOfferings:[]},
+    {key:'beroun',    name:'Farma Beránek',     style:'volný výběh', town:'Beroun',      lat:49.9639, lng:14.0725, capacity:50, animalOfferings:[]},
+    {key:'kladno',    name:'Dvůr U Rybníka',    style:'bio chov',    town:'Kladno',      lat:50.1477, lng:14.1030, capacity:35, animalOfferings:[]},
+    {key:'melnik',    name:'Vinný Dvůr',        style:'volný výběh', town:'Mělník',      lat:50.3520, lng:14.4739, capacity:45, animalOfferings:[]},
+    {key:'kutnahora', name:'Stříbrná Farma',    style:'bio chov',    town:'Kutná Hora',  lat:49.9481, lng:15.2683, capacity:25, animalOfferings:[]}
   ];
   function farmMeta(f, distanceKm){
     var loc = distanceKm==null ? f.town : f.town+', '+distanceKm+' km';
     return f.style+' · '+loc+' · '+f.capacity+' volných míst';
+  }
+
+  // ============ other livestock (docs/LIVESTOCK.md) - simulated, no real
+  // backend behind this offline demo, same "fictional but functional"
+  // honesty as everything else here (farms, badges, gift voucher). Mirrors
+  // kvoc-backend's Animal/MeatShare shape, generalized by species/product.
+  var ANIMAL_PRODUCTS = {
+    goat:  {milk: {unitLabel:'litrů mléka', kcPerUnit:25}},
+    sheep: {wool: {unitLabel:'kg vlny',     kcPerUnit:220}},
+    cow:   {milk: {unitLabel:'litrů mléka', kcPerUnit:22}}
+  };
+  var ANIMAL_CARE_MESSAGES = [
+    'se pásla na louce.', 'dostala čerstvé seno.', 'se napila z napajedla.',
+    'si hověla ve stínu.', 'dostala kartáčování.', 'si protáhla nohy na dvoře.'
+  ];
+  function speciesLabel(species){ return {goat:'Koza', sheep:'Ovce', cow:'Kráva'}[species] || species; }
+  function freshAnimal(id, species, product, name, farmKey, dailyAmount, address){
+    return {
+      id:id, species:species, product:product, name:name, farm:farmKey, dailyAmount:dailyAmount, address:address,
+      paused:false, productLog:{}, deliveries:[], pausedDates:{}
+    };
   }
   // Haversine - distance in km between two lat/lng points
   function distanceKm(lat1, lng1, lat2, lng2){
@@ -323,7 +363,12 @@
 
   var defaults = {
     onboarded: false, dayOffset: 0, activeTab: 'home', activeHenId: null,
-    nextHenId: 1, hens: []
+    nextHenId: 1, hens: [],
+    animals: [], nextAnimalId: 1,
+    // one demo meat share, mirrors kvoc-backend/app/seed.py's "Kráva Bětka" -
+    // myShares/status/totalYieldKg only, since there are no other real
+    // customers in a single-browser offline demo to show a shared total for
+    meatShare: {label:'Kráva Bětka', species:'cow', totalShares:8, priceCzk:890, includesHide:true, myShares:0, status:'open', totalYieldKg:null}
   };
   var state = loadState();
   if(!state || !Array.isArray(state.hens)){ state = JSON.parse(JSON.stringify(defaults)); }
@@ -343,6 +388,11 @@
   var geoStatus = 'idle';   // idle | asking | granted | denied | unsupported
   var userLoc = null;       // {lat, lng} once granted
   var farmRadius = 'all';   // 'all' | 10 | 25 | 50 (km)
+
+  // Statek (other livestock) - transient UI state, never persisted
+  var addAnimalOpen = false;
+  var addAnimalDraft = {species:'', product:'', farmKey:'', dailyAmount:20, name:''};
+  var shareSharesDraft = 1;
 
   // gift voucher - transient, not tied to any one hen, never persisted
   var giftOpen = false;
@@ -480,6 +530,55 @@
     return toasts;
   }
 
+  // same shape as tickHen above, generalized by species/product - see
+  // ANIMAL_PRODUCTS for the conversion rate used in the Friday delivery sum
+  function tickAnimal(animal, today){
+    var toasts = [];
+    var info = (ANIMAL_PRODUCTS[animal.species]||{})[animal.product] || {unitLabel:'jednotek', kcPerUnit:20};
+    var label = animal.name || speciesLabel(animal.species);
+    if(isWeekday(today)){
+      var key = dateKey(today);
+      if(animal.paused){
+        animal.pausedDates[key] = true;
+      } else if(!animal.productLog[key]){
+        var msg = ANIMAL_CARE_MESSAGES[Math.floor(Math.random()*ANIMAL_CARE_MESSAGES.length)];
+        animal.productLog[key] = {amount:animal.dailyAmount, msg:label+' '+msg, bonus:false, date:key};
+        toasts.push({tag:'−'+animal.dailyAmount+' Kč', body:animal.productLog[key].msg});
+
+        if(Math.random() < 0.18){
+          var bmsg = label+' má dobrý den — o trochu víc '+info.unitLabel+' navíc do páteční dodávky.';
+          animal.productLog[key+'-bonus'] = {amount:0, msg:bmsg, bonus:true, date:key};
+          toasts.push({tag:'BONUS', body:bmsg});
+        }
+
+        if(today.getDay()===5){
+          var mon = mondayOf(today);
+          var weekAmount = 0;
+          for(var i=0;i<5;i++){
+            var dd = new Date(mon.getTime()+i*86400000);
+            var k = dateKey(dd);
+            if(animal.productLog[k] && !animal.productLog[k].bonus) weekAmount += animal.productLog[k].amount;
+          }
+          var units = Math.round((weekAmount/info.kcPerUnit)*10)/10;
+          animal.deliveries.push({weekStart:dateKey(mon), units:units, amount:weekAmount, status:'transit', date:key});
+          toasts.push({tag:'PÁTEK', body:'Tenhle týden jsi '+label+' krmil. Dnes odpoledne dorazí '+units+' '+info.unitLabel+'.'});
+        }
+      }
+    }
+    if(animal.deliveries.length){
+      var last = animal.deliveries[animal.deliveries.length-1];
+      if(last.status==='transit'){
+        var fridayDate = dateOnly(new Date(last.date+'T00:00:00'));
+        var daysSince = Math.round((dateOnly(today)-fridayDate)/86400000);
+        if(daysSince >= 1){
+          last.status='delivered';
+          toasts.push({tag:'DORUČENO', body:last.units+' '+info.unitLabel+' právě dorazilo ke dveřím.'});
+        }
+      }
+    }
+    return toasts;
+  }
+
   function runTick(){
     var today = getNow();
     var activeToasts = [];
@@ -487,6 +586,9 @@
       var toasts = tickHen(hen, today);
       if(hen.id === state.activeHenId) activeToasts = activeToasts.concat(toasts);
     });
+    // other livestock ticks too, but never toasts over the hen-centric home
+    // screen's notifications - see the Statek tab for its own activity
+    (state.animals||[]).forEach(function(animal){ tickAnimal(animal, today); });
     saveState();
     if(activeToasts.length) showToasts(activeToasts);
   }
@@ -688,7 +790,8 @@
     egg: '<svg viewBox="0 0 100 130" width="16" height="21"><path d="M50,4 C74,4 90,40 90,78 C90,108 72,126 50,126 C28,126 10,108 10,78 C10,40 26,4 50,4 Z" style="fill:var(--accent)"/></svg>',
     home: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 11 12 4 20.5 11"/><path d="M5.5 9.5 V20 H18.5 V9.5"/></svg>',
     list: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="17" x2="19" y2="17"/></svg>',
-    sliders: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="var(--surface)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="9" cy="12" r="2" fill="var(--surface)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="var(--surface)"/></svg>'
+    sliders: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="var(--surface)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="9" cy="12" r="2" fill="var(--surface)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="var(--surface)"/></svg>',
+    paw: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="16.5" rx="5" ry="4"/><circle cx="6" cy="8" r="2"/><circle cx="10.5" cy="5" r="2"/><circle cx="15" cy="5.2" r="2"/><circle cx="18.5" cy="8.5" r="1.8"/></svg>'
   };
 
   // accessory pieces - drawn in the same head-local coordinates as the rest
@@ -795,6 +898,19 @@
   }
 
   // ============ render: onboarding ============
+  // ============ render: splash ============
+  // First thing anyone sees, every time the page loads - just the name and
+  // mark, nothing to read or decide. Tapping it is what actually reveals
+  // onboarding/home (and runs the daily tick) - see the boot sequence at
+  // the bottom of this file and the "splash-continue" click handler.
+  function renderSplash(){
+    document.getElementById('view-splash').innerHTML =
+      henSvg(false, [])+
+      '<div class="splash-word">Kvoč</div>'+
+      '<div class="splash-tag">Slepička, co krmíš každý den. Vejce, co čekáš každý pátek.</div>'+
+      '<div class="splash-hint mono">Klepnutím pokračuj</div>';
+  }
+
   function renderOnboarding(){
     var host = document.getElementById('view-onboarding');
     if(obStep===1){
@@ -987,6 +1103,120 @@
   }
 
   // ============ render: settings ============
+  // ============ render: Statek (other livestock) - see docs/LIVESTOCK.md ============
+  function renderAddAnimalForm(){
+    var productPills = [];
+    Object.keys(ANIMAL_PRODUCTS).forEach(function(species){
+      Object.keys(ANIMAL_PRODUCTS[species]).forEach(function(product){
+        var info = ANIMAL_PRODUCTS[species][product];
+        var active = addAnimalDraft.species===species && addAnimalDraft.product===product;
+        productPills.push('<div class="pill pressable" data-action="pick-animal-product" data-species="'+species+'" data-product="'+product+'" data-active="'+active+'">'+speciesLabel(species)+' · '+info.unitLabel+'</div>');
+      });
+    });
+
+    var body = '<div class="card"><div class="field-label">Druh a produkt</div><div class="pill-row">'+productPills.join('')+'</div>';
+
+    if(addAnimalDraft.species){
+      var offeringFarms = FARMS.filter(function(f){
+        return (f.animalOfferings||[]).some(function(o){ return o.species===addAnimalDraft.species && o.product===addAnimalDraft.product; });
+      });
+      var farmCards = offeringFarms.length ? offeringFarms.map(function(f){
+        var offering = f.animalOfferings.filter(function(o){ return o.species===addAnimalDraft.species && o.product===addAnimalDraft.product; })[0];
+        var taken = state.animals.filter(function(a){ return a.farm===f.key && a.species===addAnimalDraft.species && a.product===addAnimalDraft.product; }).length;
+        var spotsLeft = offering.capacity - taken;
+        var full = spotsLeft <= 0;
+        var sel = addAnimalDraft.farmKey===f.key;
+        return '<div class="farm-card pressable" data-action="'+(full?'noop':'pick-animal-farm')+'" data-farm="'+f.key+'" data-selected="'+sel+'" style="'+(full?'opacity:.5;':'')+'">'+
+          '<div><div class="farm-name">'+escapeHtml(f.name)+'</div><div class="farm-meta">'+(full?'plno':spotsLeft+' volných míst')+'</div></div>'+
+          '<div class="check-circle">'+ICO.check+'</div></div>';
+      }).join('') : '<div class="empty-note">Žádná farma tohle zatím nenabízí.</div>';
+
+      body +=
+        '<div class="field-label" style="margin-top:14px;">Farma</div>'+
+        '<div style="display:flex;flex-direction:column;gap:8px;">'+farmCards+'</div>'+
+        '<div class="field-label" style="margin-top:14px;">Jméno (nepovinné)</div>'+
+        '<input class="text-input" id="add-animal-name" value="'+escapeHtml(addAnimalDraft.name)+'">'+
+        '<div class="stepper-row" style="margin-top:12px;">'+
+          '<div class="round-btn pressable" data-action="add-animal-amount-minus">'+ICO.minus+'</div>'+
+          '<div class="stepper-num">'+addAnimalDraft.dailyAmount+' Kč</div>'+
+          '<div class="round-btn pressable" data-action="add-animal-amount-plus">'+ICO.plus+'</div>'+
+        '</div>'+
+        '<div class="pressable" data-action="adopt-animal-submit" style="margin-top:12px;"><div class="btn-primary" style="font-size:13.5px;padding:12px;">Adoptovat</div></div>';
+    }
+    body += '<div class="pressable" data-action="add-animal-close" style="margin-top:8px;"><div class="btn-secondary">Zrušit</div></div></div>';
+    return body;
+  }
+
+  function renderMeatShareCard(){
+    var s = state.meatShare;
+    var statusLabel = {open:'OTEVŘENO', full:'NAPLNĚNO', ready:'PŘIPRAVENO'}[s.status] || s.status;
+    var body = '<div class="card">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'+
+        '<div><div class="farm-name">'+escapeHtml(s.label)+'</div><div class="farm-meta">'+speciesLabel(s.species)+(s.includesHide?' + kůže':'')+'</div></div>'+
+        '<span class="status-chip">'+statusLabel+'</span>'+
+      '</div>'+
+      '<div class="center-mono" style="margin-top:8px;">'+s.myShares+' / '+s.totalShares+' podílů koupeno · '+s.priceCzk+' Kč/podíl</div>';
+    if(s.myShares > 0){
+      var payout = s.totalYieldKg!=null ? Math.round(s.totalYieldKg*s.myShares/s.totalShares*10)/10 : null;
+      body += '<div class="hint mono" style="margin-top:6px;color:var(--accent-text);">Zaplaceno: '+(s.myShares*s.priceCzk)+' Kč'+(payout!=null?' → '+payout+' kg':'')+'</div>';
+    }
+    if(s.status==='open'){
+      body += '<div class="stepper-row" style="margin-top:10px;">'+
+        '<div class="round-btn pressable" data-action="share-shares-minus">'+ICO.minus+'</div>'+
+        '<div class="stepper-num">'+shareSharesDraft+'</div>'+
+        '<div class="round-btn pressable" data-action="share-shares-plus">'+ICO.plus+'</div>'+
+      '</div>'+
+      '<div class="pressable" data-action="share-contribute" style="margin-top:10px;"><div class="btn-primary" style="font-size:13.5px;padding:11px;">Koupit '+shareSharesDraft+'× podíl</div></div>';
+    } else if(s.status==='full' && s.myShares>0){
+      body += '<div class="pressable" data-action="share-mark-ready" style="margin-top:10px;"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">Simulovat zpracování →</div></div>';
+    }
+    body += '</div>';
+    return body;
+  }
+
+  function renderLivestock(){
+    var myAnimalsHtml = state.animals.length ? state.animals.map(function(a){
+      var info = (ANIMAL_PRODUCTS[a.species]||{})[a.product] || {unitLabel:a.product};
+      var farm = FARMS.filter(function(f){ return f.key===a.farm; })[0];
+      var lastDelivery = a.deliveries.length ? a.deliveries[a.deliveries.length-1] : null;
+      var deliveryLine = lastDelivery ? (
+        '<div class="hint mono" style="margin-top:6px;color:var(--accent-text);">'+
+        (lastDelivery.status==='delivered' ? 'Poslední dodávka: '+lastDelivery.units+' '+info.unitLabel+' (doručeno)' : lastDelivery.units+' '+info.unitLabel+' je na cestě')+
+        '</div>'
+      ) : '';
+      return '<div class="card">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'+
+          '<div><div class="farm-name">'+escapeHtml(a.name || speciesLabel(a.species))+'</div>'+
+          '<div class="farm-meta">'+speciesLabel(a.species)+' · '+info.unitLabel+(farm?' · '+escapeHtml(farm.name):'')+'</div></div>'+
+          (a.paused?'<span class="status-chip">POZASTAVENO</span>':'')+
+        '</div>'+
+        deliveryLine+
+        '<div class="stepper-row" style="margin-top:10px;">'+
+          '<div class="round-btn pressable" data-action="animal-amount-minus" data-id="'+a.id+'">'+ICO.minus+'</div>'+
+          '<div class="stepper-num">'+a.dailyAmount+' Kč</div>'+
+          '<div class="round-btn pressable" data-action="animal-amount-plus" data-id="'+a.id+'">'+ICO.plus+'</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;margin-top:12px;">'+
+          '<div class="pressable" data-action="animal-toggle-pause" data-id="'+a.id+'" style="flex:1;"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">'+(a.paused?'Obnovit':'Pozastavit')+'</div></div>'+
+          '<div class="pressable" data-action="animal-cancel" data-id="'+a.id+'" style="flex:1;"><div class="btn-secondary" style="border:1.5px dashed var(--accent);border-radius:4px;color:var(--accent-text);">Zrušit</div></div>'+
+        '</div>'+
+      '</div>';
+    }).join('') : '<div class="empty-note">Zatím žádné další zvíře.</div>';
+
+    var addBlock = addAnimalOpen ? renderAddAnimalForm()
+      : '<div class="pressable" data-action="add-animal-open"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">+ Adoptovat další zvíře</div></div>';
+
+    var host = document.getElementById('main-content');
+    host.innerHTML =
+      '<div><div class="app-eyebrow">Statek</div><div class="app-h1" style="margin-top:2px;">Kozy, ovce, krávy</div></div>'+
+      '<div class="app-sub">Mléko a vlna průběžně, maso jako sdílený chov. Simulované demo, stejně jako farmy vlevo v adopci.</div>'+
+      '<div class="field-label" style="margin-top:6px;">Tvoje zvířata</div>'+
+      myAnimalsHtml+
+      addBlock+
+      '<div class="field-label" style="margin-top:10px;">Sdílený chov na maso</div>'+
+      renderMeatShareCard();
+  }
+
   function renderSettings(){
     var hen = activeHen();
     var weekly = hen.dailyAmount*5;
@@ -1046,7 +1276,7 @@
 
   // ============ tab bar ============
   function renderTabbar(){
-    var tabs = [['home','Domů',ICO.home],['activity','Aktivita',ICO.list],['settings','Nastavení',ICO.sliders]];
+    var tabs = [['home','Domů',ICO.home],['activity','Aktivita',ICO.list],['livestock','Statek',ICO.paw],['settings','Nastavení',ICO.sliders]];
     document.getElementById('tabbar').innerHTML = tabs.map(function(t){
       var active = state.activeTab===t[0];
       return '<div class="tab pressable" data-action="tab" data-tab="'+t[0]+'" data-active="'+active+'">'+
@@ -1066,6 +1296,7 @@
     document.getElementById('view-main').style.display = 'flex';
     if(state.activeTab==='home') renderHome();
     else if(state.activeTab==='activity') renderActivity();
+    else if(state.activeTab==='livestock') renderLivestock();
     else renderSettings();
     renderTabbar();
   }
@@ -1085,7 +1316,82 @@
     if(!el) return;
     var action = el.getAttribute('data-action');
 
-    if(action==='select-farm'){ obDraft.farm = el.getAttribute('data-farm'); renderOnboarding(); }
+    if(action==='splash-continue'){
+      document.getElementById('view-splash').style.display = 'none';
+      if(state.onboarded && activeHen()){ runTick(); }
+      renderAll();
+    }
+    else if(action==='select-farm'){ obDraft.farm = el.getAttribute('data-farm'); renderOnboarding(); }
+
+    // --- Statek (other livestock) ---
+    else if(action==='add-animal-open'){ addAnimalOpen = true; addAnimalDraft = {species:'', product:'', farmKey:'', dailyAmount:20, name:''}; renderLivestock(); }
+    else if(action==='add-animal-close'){ addAnimalOpen = false; renderLivestock(); }
+    else if(action==='pick-animal-product'){
+      addAnimalDraft.species = el.getAttribute('data-species');
+      addAnimalDraft.product = el.getAttribute('data-product');
+      addAnimalDraft.farmKey = '';
+      renderLivestock();
+    }
+    else if(action==='pick-animal-farm'){ addAnimalDraft.farmKey = el.getAttribute('data-farm'); renderLivestock(); }
+    else if(action==='add-animal-amount-minus'){ addAnimalDraft.dailyAmount = Math.max(10, addAnimalDraft.dailyAmount-5); renderLivestock(); }
+    else if(action==='add-animal-amount-plus'){ addAnimalDraft.dailyAmount = Math.min(40, addAnimalDraft.dailyAmount+5); renderLivestock(); }
+    else if(action==='adopt-animal-submit'){
+      var animalNameEl = document.getElementById('add-animal-name');
+      if(animalNameEl) addAnimalDraft.name = animalNameEl.value.trim();
+      if(!addAnimalDraft.species || !addAnimalDraft.farmKey){ showToasts([{tag:'CHYBA', body:'Vyber druh i farmu.'}]); return; }
+      var newAnimal = freshAnimal(state.nextAnimalId++, addAnimalDraft.species, addAnimalDraft.product, addAnimalDraft.name, addAnimalDraft.farmKey, addAnimalDraft.dailyAmount, '');
+      state.animals.push(newAnimal);
+      addAnimalOpen = false;
+      saveState();
+      tickAnimal(newAnimal, getNow());  // day one, same idea as adopt_hen's immediate tick
+      saveState();
+      renderLivestock();
+    }
+    else if(action==='animal-amount-minus' || action==='animal-amount-plus'){
+      var aid = Number(el.getAttribute('data-id'));
+      var animalRow = state.animals.filter(function(x){ return x.id===aid; })[0];
+      if(!animalRow) return;
+      animalRow.dailyAmount = action==='animal-amount-minus' ? Math.max(10, animalRow.dailyAmount-5) : Math.min(40, animalRow.dailyAmount+5);
+      saveState(); renderLivestock();
+    }
+    else if(action==='animal-toggle-pause'){
+      var aid2 = Number(el.getAttribute('data-id'));
+      var animalRow2 = state.animals.filter(function(x){ return x.id===aid2; })[0];
+      if(!animalRow2) return;
+      animalRow2.paused = !animalRow2.paused;
+      saveState(); renderLivestock();
+    }
+    else if(action==='animal-cancel'){
+      var aid3 = Number(el.getAttribute('data-id'));
+      if(!window.confirm('Zrušit tohle zvíře? Nejde to vzít zpět.')) return;
+      state.animals = state.animals.filter(function(x){ return x.id!==aid3; });
+      saveState(); renderLivestock();
+    }
+    else if(action==='share-shares-minus'){ shareSharesDraft = Math.max(1, shareSharesDraft-1); renderLivestock(); }
+    else if(action==='share-shares-plus'){ shareSharesDraft = Math.min(state.meatShare.totalShares, shareSharesDraft+1); renderLivestock(); }
+    else if(action==='share-contribute'){
+      var s = state.meatShare;
+      var left = s.totalShares - s.myShares;
+      var n = Math.min(shareSharesDraft, left);
+      if(n <= 0) return;
+      s.myShares += n;
+      if(s.myShares >= s.totalShares) s.status = 'full';
+      shareSharesDraft = 1;
+      saveState();
+      showToasts([{tag:'PODÍL', body:'Koupeno '+n+'× podíl na „'+s.label+'“ za '+(n*s.priceCzk)+' Kč.'}]);
+      renderLivestock();
+    }
+    else if(action==='share-mark-ready'){
+      var s2 = state.meatShare;
+      // a realistic-ish demo yield for a cow, ~180-220kg - same "illustrative
+      // number, not a real farmer's report" honesty as everything else here
+      s2.totalYieldKg = 180 + Math.round(Math.random()*40);
+      s2.status = 'ready';
+      var myPayout = Math.round(s2.totalYieldKg*s2.myShares/s2.totalShares*10)/10;
+      saveState();
+      showToasts([{tag:'MASO PŘIPRAVENO', body:'„'+s2.label+'“ je hotová — tvůj podíl je '+myPayout+' kg'+(s2.includesHide?' + kůže':'')+'.'}]);
+      renderLivestock();
+    }
     else if(action==='geo-request'){ requestLocation(); }
     else if(action==='farm-radius'){
       var r = el.getAttribute('data-radius');
@@ -1210,9 +1516,11 @@
   });
 
   // ============ boot ============
-  // the very first tick only runs once onboarding actually finishes (onb-finish),
-  // so day one reflects the hen name / amount the user just chose, not the defaults
-  if(state.onboarded && activeHen()){ runTick(); }
-  renderAll();
+  // Splash shows first (its own CSS defaults to visible) - the daily tick
+  // and the real onboarding/home decision both wait for the tap, same as
+  // the real backend-connected webapp's splash screen.
+  document.getElementById('view-onboarding').style.display = 'none';
+  document.getElementById('view-main').style.display = 'none';
+  renderSplash();
 })();
 </script>
