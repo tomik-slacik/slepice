@@ -37,6 +37,22 @@
 
   /* ---------- shared onboarding/auth chrome ---------- */
   #view-auth, #view-onboarding{flex:1;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top,0px) + 26px) 22px 24px;gap:18px;}
+
+  /* ---------- splash ---------- */
+  #view-splash{
+    flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:18px;padding:24px;text-align:center;cursor:pointer;user-select:none;
+  }
+  .splash-word{font-family:'Rye',serif;font-size:52px;color:var(--accent-text);line-height:1;}
+  .splash-tag{font-size:13.5px;color:var(--ink-soft);max-width:260px;}
+  .splash-hint{
+    position:absolute;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink-soft);opacity:.7;
+  }
+  @keyframes splash-hint-pulse{0%,100%{opacity:.4;}50%{opacity:.9;}}
+  .splash-hint{animation:splash-hint-pulse 2.2s ease-in-out infinite;}
+  @media (prefers-reduced-motion: reduce){ .splash-hint{animation:none;opacity:.7;} }
   .topbar{display:flex;align-items:center;justify-content:space-between;}
   .icon-btn{color:var(--ink);cursor:pointer;padding:4px;}
   .app-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-text);}
@@ -204,6 +220,7 @@
 <body>
 <div id="shell">
   <div id="toast-host"></div>
+  <div id="view-splash" class="pressable" data-action="splash-continue"></div>
   <div id="view-auth"></div>
   <div id="view-onboarding"></div>
   <div id="view-main">
@@ -397,9 +414,23 @@
 
   // ============ view visibility ============
   function showView(name){
+    document.getElementById('view-splash').style.display = name==='splash' ? 'flex' : 'none';
     document.getElementById('view-auth').style.display = name==='auth' ? 'flex' : 'none';
     document.getElementById('view-onboarding').style.display = name==='onboarding' ? 'flex' : 'none';
     document.getElementById('view-main').style.display = name==='main' ? 'flex' : 'none';
+  }
+
+  // ============ render: splash ============
+  // First thing anyone sees, every time the app opens - just the name and
+  // mark, nothing to read or decide. Tapping it is what actually kicks off
+  // boot() (checking for a saved session, hitting the backend, etc.) - so
+  // the app never seems to be "thinking" before the user has done anything.
+  function renderSplash(){
+    document.getElementById('view-splash').innerHTML =
+      ICO.hen+
+      '<div class="splash-word">Kvoč</div>'+
+      '<div class="splash-tag">Slepička, co krmíš každý den. Vejce, co čekáš každý pátek.</div>'+
+      '<div class="splash-hint mono">Klepnutím pokračuj</div>';
   }
 
   // ============ render: auth ============
@@ -852,8 +883,11 @@
     if(!el) return;
     var action = el.getAttribute('data-action');
 
+    // --- splash ---
+    if(action==='splash-continue'){ boot(); }
+
     // --- auth ---
-    if(action==='auth-toggle'){ authMode = authMode==='login' ? 'register' : 'login'; renderAuth(); }
+    else if(action==='auth-toggle'){ authMode = authMode==='login' ? 'register' : 'login'; renderAuth(); }
     else if(action==='auth-submit'){
       var email = (document.getElementById('auth-email').value||'').trim();
       var password = document.getElementById('auth-password').value||'';
@@ -965,7 +999,8 @@
     }
   });
 
-  boot();
+  renderSplash();
+  showView('splash');
 })();
 </script>
 </body>
