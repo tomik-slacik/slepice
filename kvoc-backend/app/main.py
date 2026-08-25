@@ -28,9 +28,9 @@ for _stream in (sys.stdout, sys.stderr):
 from . import config, models  # noqa: F401  (models import registers them on Base before init_db)
 from .database import SessionLocal, init_db
 from .logging_setup import setup_logging
-from .routers import admin, auth, farms, hens, wallet
+from .routers import admin, animals, auth, farms, hens, meat_shares, wallet
 from .scheduler import start_scheduler, stop_scheduler
-from .seed import seed_farms
+from .seed import seed_animal_offerings, seed_farms, seed_meat_shares
 
 logger = setup_logging()
 
@@ -41,6 +41,8 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         seed_farms(db)
+        seed_animal_offerings(db)
+        seed_meat_shares(db)
     finally:
         db.close()
     start_scheduler()
@@ -72,6 +74,8 @@ app.include_router(auth.router)
 app.include_router(farms.router)
 app.include_router(hens.router)
 app.include_router(wallet.router)
+app.include_router(animals.router)
+app.include_router(meat_shares.router)
 app.include_router(admin.router)
 
 

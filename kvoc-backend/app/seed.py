@@ -10,7 +10,24 @@ Same roster as frontend/index.html's FARMS array - keep them in sync.
 """
 from sqlalchemy.orm import Session
 
-from .models import Farm
+from .models import Farm, FarmAnimalOffering, MeatShare
+
+# Which existing farms above also offer other livestock (see
+# docs/LIVESTOCK.md) - reuses the same 8 farms rather than inventing new
+# ones, since a real farm plausibly keeps more than one kind of animal.
+_ANIMAL_OFFERINGS = [
+    dict(farm_key="dvur", species="goat", product="milk", weekly_capacity=20),
+    dict(farm_key="polana", species="sheep", product="wool", weekly_capacity=15),
+    dict(farm_key="lipa", species="cow", product="milk", weekly_capacity=25),
+]
+
+# One demo meat share so the feature isn't an empty list the first time
+# anyone looks - still fictional, same honesty caveat as the farms
+# themselves (see LOGISTICS.md): no real animal, no real farmer agreement.
+_MEAT_SHARES = [
+    dict(farm_key="dvur", species="cow", label="Kráva Bětka", total_shares=8,
+         price_per_share_czk=890, includes_hide=True),
+]
 
 _FARMS = [
     dict(key="lipa", name="Farma U Lípy", description="volný výběh", lat=49.8564, lng=14.8636, weekly_capacity=60),
@@ -45,5 +62,49 @@ def seed_farms(db: Session) -> None:
             if current.weekly_capacity is None:
                 current.weekly_capacity = row["weekly_capacity"]
                 changed = True
+    if changed:
+        db.commit()
+
+
+def seed_animal_offerings(db: Session) -> None:
+    """Idempotent per (farm, species, product) - safe to call every boot."""
+    farms_by_key = {f.key: f for f in db.query(Farm).all()}
+    existing = {
+        (o.farm_id, o.species, o.product)
+        for o in db.query(FarmAnimalOffering).all()
+    }
+    changed = False
+    for row in _ANIMAL_OFFERINGS:
+        farm = farms_by_key.get(row["farm_key"])
+        if farm is None:
+            continue  # seed_farms() hasn't run yet or the key changed - skip rather than crash
+        key = (farm.id, row["species"], row["product"])
+        if key not in existing:
+            db.add(FarmAnimalOffering(
+                farm_id=farm.id, species=row["species"], product=row["product"],
+                weekly_capacity=row["weekly_capacity"],
+            ))
+            changed = True
+    if changed:
+        db.commit()
+
+
+def seed_meat_shares(db: Session) -> None:
+    """Idempotent per label - safe to call every boot."""
+    farms_by_key = {f.key: f for f in db.query(Farm).all()}
+    existing_labels = {s.label for s in db.query(MeatShare).all()}
+    changed = False
+    for row in _MEAT_SHARES:
+        if row["label"] in existing_labels:
+            continue
+        farm = farms_by_key.get(row["farm_key"])
+        if farm is None:
+            continue
+        db.add(MeatShare(
+            farm_id=farm.id, species=row["species"], label=row["label"],
+            total_shares=row["total_shares"], price_per_share_czk=row["price_per_share_czk"],
+            includes_hide=row["includes_hide"],
+        ))
+        changed = True
     if changed:
         db.commit()

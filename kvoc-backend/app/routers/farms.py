@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import config, models, schemas
 from ..database import get_db
 
 router = APIRouter(prefix="/farms", tags=["farms"])
@@ -36,12 +36,27 @@ def list_farms(
     than that away instead of just sorting them to the bottom.
     """
     farms = db.query(models.Farm).all()
+    offerings = db.query(models.FarmAnimalOffering).all()
+    animals = db.query(models.Animal).all()
+
     out = []
     for f in farms:
         row = schemas.FarmOut.model_validate(f)
         row.spots_left = f.weekly_capacity - len(f.hens) if f.weekly_capacity is not None else None
         if lat is not None and lng is not None and f.lat is not None and f.lng is not None:
             row.distance_km = _haversine_km(lat, lng, f.lat, f.lng)
+
+        for o in offerings:
+            if o.farm_id != f.id:
+                continue
+            unit_label = config.ANIMAL_PRODUCTS.get(o.species, {}).get(o.product, {}).get("unit_label", "")
+            spots = None
+            if o.weekly_capacity is not None:
+                taken = sum(1 for a in animals if a.farm_id == f.id and a.species == o.species and a.product == o.product)
+                spots = o.weekly_capacity - taken
+            row.animal_offerings.append(schemas.FarmOfferingOut(
+                species=o.species, product=o.product, unit_label=unit_label, spots_left=spots,
+            ))
         out.append(row)
 
     if lat is None or lng is None:

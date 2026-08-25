@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .integrations.notifications import get_notification_provider
-from .models import Delivery, FeedLogEntry, Hen, PausedDay
+from .models import Animal, AnimalDelivery, AnimalPausedDay, AnimalProductLogEntry, Delivery, FeedLogEntry, Hen, PausedDay
 
 FEED_MESSAGES = [
     "dostala ranní zrníčko.",
@@ -26,6 +26,19 @@ FEED_MESSAGES = [
     "si protáhla křídla na dvorku.",
     "si hověla v čerstvé podestýlce.",
     "se proháněla po dvorku za motýlem.",
+]
+
+# Shared across goat/sheep/cow - generic enough to fit any of them, unlike
+# FEED_MESSAGES above which is written hen-specific on purpose (pecking,
+# wings). See docs/LIVESTOCK.md on why this is one shared pool instead of
+# bespoke text per species for a first pass.
+ANIMAL_CARE_MESSAGES = [
+    "se pásla na louce.",
+    "dostala čerstvé seno.",
+    "se napila z napajedla.",
+    "si hověla ve stínu.",
+    "dostala kartáčování.",
+    "si protáhla nohy na dvoře.",
 ]
 
 
@@ -184,6 +197,154 @@ def compute_streak(db: Session, hen: Hen, today: Optional[dt.date] = None) -> in
                     pass  # frozen, not broken
                 elif d == today:
                     pass  # today just hasn't ticked yet
+                else:
+                    break
+        d = d - dt.timedelta(days=1)
+    return streak
+
+
+# ============================================================================
+# Other livestock (see docs/LIVESTOCK.md) - same shape as the hen functions
+# above, parameterized by species/product via config.ANIMAL_PRODUCTS instead
+# of hardcoded eggs/Kč-per-egg math.
+# ============================================================================
+
+
+def run_tick_for_animal(db: Session, animal: Animal, today: dt.date) -> None:
+    notifier = get_notification_provider()
+    device_token = animal.owner.fcm_token if animal.owner else None
+    product_info = config.ANIMAL_PRODUCTS.get(animal.species, {}).get(animal.product, {})
+    kc_per_unit = product_info.get("kc_per_unit", 20)
+    unit_label = product_info.get("unit_label", "jednotek")
+
+    if today.weekday() < 5:
+        if animal.paused:
+            already = (
+                db.query(AnimalPausedDay)
+                .filter(AnimalPausedDay.animal_id == animal.id, AnimalPausedDay.date == today)
+                .first()
+            )
+            if already is None:
+                db.add(AnimalPausedDay(animal_id=animal.id, date=today))
+        else:
+            existing = (
+                db.query(AnimalProductLogEntry)
+                .filter(
+                    AnimalProductLogEntry.animal_id == animal.id,
+                    AnimalProductLogEntry.date == today,
+                    AnimalProductLogEntry.is_bonus.is_(False),
+                )
+                .first()
+            )
+            if existing is None:
+                msg = f"{animal.name or animal.species.capitalize()} {random.choice(ANIMAL_CARE_MESSAGES)}"
+                db.add(AnimalProductLogEntry(animal_id=animal.id, date=today, amount=animal.daily_amount, message=msg, is_bonus=False))
+                notifier.send(animal.id, device_token, f"-{animal.daily_amount} Kč", msg)
+
+                if random.random() < config.BONUS_CHANCE:
+                    bonus_msg = (
+                        f"{animal.name or animal.species.capitalize()} má dobrý den — o trochu víc "
+                        f"{unit_label} navíc do páteční dodávky."
+                    )
+                    db.add(AnimalProductLogEntry(animal_id=animal.id, date=today, amount=0, message=bonus_msg, is_bonus=True))
+                    notifier.send(animal.id, device_token, "BONUS", bonus_msg)
+
+                if today.weekday() == config.DELIVERY_WEEKDAY:
+                    monday = _monday_of(today)
+                    rows = (
+                        db.query(AnimalProductLogEntry.amount)
+                        .filter(
+                            AnimalProductLogEntry.animal_id == animal.id,
+                            AnimalProductLogEntry.date >= monday,
+                            AnimalProductLogEntry.date <= today,
+                            AnimalProductLogEntry.is_bonus.is_(False),
+                        )
+                        .all()
+                    )
+                    total = sum(a for (a,) in rows)
+                    units = round(total / kc_per_unit, 1) if kc_per_unit else 0.0
+                    db.add(AnimalDelivery(
+                        animal_id=animal.id, week_start=monday, date=today,
+                        amount=total, units=units, status="transit",
+                    ))
+                    notifier.send(
+                        animal.id, device_token, "PÁTEK",
+                        f"Tenhle týden jsi {animal.name or animal.species} krmil. Dnes odpoledne dorazí {units} {unit_label}.",
+                    )
+
+    last_delivery = (
+        db.query(AnimalDelivery)
+        .filter(AnimalDelivery.animal_id == animal.id, AnimalDelivery.status == "transit")
+        .order_by(AnimalDelivery.date.desc())
+        .first()
+    )
+    if last_delivery is not None and (today - last_delivery.date).days >= 1:
+        last_delivery.status = "delivered"
+        notifier.send(animal.id, device_token, "DORUČENO", f"{last_delivery.units} {unit_label} právě dorazilo ke dveřím.")
+
+    db.commit()
+
+
+def effective_today_for_animal(db: Session, animal: Animal) -> dt.date:
+    """Same reasoning as effective_today_for_hen above."""
+    real_today = dt.date.today()
+    latest = (
+        db.query(func.max(AnimalProductLogEntry.date))
+        .filter(AnimalProductLogEntry.animal_id == animal.id)
+        .scalar()
+    )
+    if latest and latest > real_today:
+        return latest
+    return real_today
+
+
+def run_animal_tick_for_all(db: Session, today: Optional[dt.date] = None) -> int:
+    today = today or dt.date.today()
+    animals = db.query(Animal).all()
+    for animal in animals:
+        run_tick_for_animal(db, animal, today)
+    return len(animals)
+
+
+def compute_animal_week_balance(db: Session, animal: Animal, today: Optional[dt.date] = None) -> int:
+    today = today or dt.date.today()
+    monday = _monday_of(today)
+    rows = (
+        db.query(AnimalProductLogEntry.amount)
+        .filter(
+            AnimalProductLogEntry.animal_id == animal.id,
+            AnimalProductLogEntry.date >= monday,
+            AnimalProductLogEntry.date <= today,
+            AnimalProductLogEntry.is_bonus.is_(False),
+        )
+        .all()
+    )
+    return sum(a for (a,) in rows)
+
+
+def compute_animal_streak(db: Session, animal: Animal, today: Optional[dt.date] = None) -> int:
+    today = today or dt.date.today()
+    streak = 0
+    d = today
+    for _ in range(370):
+        if d.weekday() < 5:
+            fed = (
+                db.query(AnimalProductLogEntry)
+                .filter(AnimalProductLogEntry.animal_id == animal.id, AnimalProductLogEntry.date == d, AnimalProductLogEntry.is_bonus.is_(False))
+                .first()
+            )
+            if fed is not None:
+                streak += 1
+            else:
+                was_paused = (
+                    db.query(AnimalPausedDay)
+                    .filter(AnimalPausedDay.animal_id == animal.id, AnimalPausedDay.date == d)
+                    .first()
+                )
+                if was_paused is not None:
+                    pass
+                elif d == today:
+                    pass
                 else:
                     break
         d = d - dt.timedelta(days=1)

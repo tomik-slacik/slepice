@@ -62,6 +62,13 @@ class FarmUpdate(BaseModel):
     weekly_capacity: Optional[int] = Field(default=None, gt=0)
 
 
+class FarmOfferingOut(BaseModel):
+    species: str
+    product: str
+    unit_label: str
+    spots_left: Optional[int] = None
+
+
 class FarmOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -82,6 +89,9 @@ class FarmOut(BaseModel):
     # current headcount would show a negative number on purpose - that's a
     # real "this farm is over capacity" signal, not a bug to hide.
     spots_left: Optional[int] = None
+    # which other-livestock species/products this farm offers (see
+    # docs/LIVESTOCK.md) - empty list for a farm that's hens/eggs only.
+    animal_offerings: list["FarmOfferingOut"] = Field(default_factory=list)
 
 
 class HenCreate(BaseModel):
@@ -158,3 +168,117 @@ class TopUpOut(BaseModel):
     provider: str
     status: str
     created_at: dt.datetime
+
+
+# ============================================================================
+# Other livestock (see docs/LIVESTOCK.md) - mirrors the Hen schemas above,
+# generalized by species/product. Same reasoning as models.py: separate
+# classes, not a generic rename, so nothing about the hen/egg flow changes.
+# ============================================================================
+
+
+class AnimalCreate(BaseModel):
+    species: str = Field(..., min_length=1, max_length=20)
+    product: str = Field(..., min_length=1, max_length=20)
+    name: str = Field(default="", max_length=40)
+    farm_key: str
+    daily_amount: int = Field(
+        default=config.DEFAULT_DAILY_AMOUNT, ge=config.MIN_DAILY_AMOUNT, le=config.MAX_DAILY_AMOUNT
+    )
+    address: str = Field(default="", max_length=200)
+
+
+class AnimalUpdate(BaseModel):
+    name: Optional[str] = Field(default=None, max_length=40)
+    daily_amount: Optional[int] = Field(
+        default=None, ge=config.MIN_DAILY_AMOUNT, le=config.MAX_DAILY_AMOUNT
+    )
+    address: Optional[str] = Field(default=None, max_length=200)
+    paused: Optional[bool] = None
+
+
+class AnimalOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    species: str
+    product: str
+    name: str
+    farm_id: int
+    daily_amount: int
+    address: str
+    paused: bool
+
+
+class AnimalProductLogEntryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    date: dt.date
+    amount: int
+    message: str
+    is_bonus: bool
+
+
+class AnimalDeliveryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    week_start: dt.date
+    date: dt.date
+    amount: int
+    units: float
+    status: str
+
+
+class AnimalWalletOut(BaseModel):
+    daily_amount: int
+    week_balance: int
+    streak: int
+
+
+class AvailableProductOut(BaseModel):
+    """One row of config.ANIMAL_PRODUCTS, flattened for a client to render a
+    species/product picker without hardcoding the registry itself."""
+    species: str
+    product: str
+    unit: str
+    unit_label: str
+    kc_per_unit: float
+
+
+class MeatShareCreate(BaseModel):
+    farm_key: str
+    species: str = Field(..., min_length=1, max_length=20)
+    label: str = Field(..., min_length=1, max_length=80)
+    total_shares: int = Field(..., gt=0, le=100)
+    price_per_share_czk: int = Field(..., gt=0)
+    includes_hide: bool = False
+    expected_ready_date: Optional[dt.date] = None
+
+
+class MeatShareOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    farm_id: int
+    species: str
+    label: str
+    total_shares: int
+    price_per_share_czk: int
+    includes_hide: bool
+    expected_ready_date: Optional[dt.date] = None
+    status: str
+    total_yield_kg: Optional[float] = None
+    shares_taken: int = 0        # sum of every contribution's shares
+    my_shares: int = 0           # the requesting user's own shares, 0 if none - never another user's
+    my_payout_kg: Optional[float] = None  # only set once status == "ready"/"fulfilled" and the user holds shares
+
+
+class ShareContributeIn(BaseModel):
+    shares: int = Field(..., gt=0)
+
+
+class MarkShareReadyIn(BaseModel):
+    total_yield_kg: float = Field(..., gt=0)

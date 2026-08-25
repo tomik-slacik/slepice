@@ -69,6 +69,26 @@ STRIPE_SECRET_KEY = os.environ.get("KVOC_STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("KVOC_STRIPE_PUBLISHABLE_KEY", "")
 TOPUP_WEEKS_COVERED = 4  # how many weeks of daily_amount one top-up should cover
 
+# ---- other livestock (see docs/LIVESTOCK.md) ----
+# One place that defines which species make which ongoing (non-slaughter)
+# product, at what real-world rate - adding a new species/product combo
+# later is adding an entry here (+ a farm offering it, see seed.py), not
+# writing new code. kc_per_unit is a rough real-world price used to convert
+# a daily_amount into a weekly quantity, same idea as config.KC_PER_EGG -
+# validate against real suppliers before this ever charges anyone for real.
+ANIMAL_PRODUCTS = {
+    "goat": {
+        "milk": {"unit": "l", "unit_label": "litrů mléka", "kc_per_unit": 25},
+    },
+    "sheep": {
+        "wool": {"unit": "kg", "unit_label": "kg vlny", "kc_per_unit": 220},
+    },
+    "cow": {
+        "milk": {"unit": "l", "unit_label": "litrů mléka", "kc_per_unit": 22},
+    },
+}
+MEAT_SHARE_SPECIES = ["cow", "goat", "sheep"]  # who a MeatShare is allowed to be
+
 # ---- email ----
 # Which EmailProvider app/integrations/email.py hands back. "console" (the
 # safe default) never sends anything real, just prints what would be sent.

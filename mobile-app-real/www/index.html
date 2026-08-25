@@ -165,6 +165,7 @@
   .stub[data-type="bonus"] .tag{background:var(--yolk);color:#241B14;padding:2px 6px;}
   .stub[data-type="summary"] .tag{color:var(--accent-text);}
   .empty-note{font-size:13px;color:var(--ink-soft);text-align:center;padding:24px 12px;}
+  .status-chip{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.05em;color:var(--accent-text);background:var(--surface-2);border:1px solid var(--line);border-radius:20px;padding:2px 8px;white-space:nowrap;flex-shrink:0;}
 
   .round-btn{width:38px;height:38px;border-radius:50%;background:var(--surface-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
   .stepper-row{display:flex;align-items:center;justify-content:center;gap:18px;margin-top:10px;}
@@ -259,6 +260,17 @@
   var selDay = null;
   var actFilter = 'all';
   var stripeState = null;               // {stripe, elements} once a real Stripe form is mounted
+
+  // ---- other livestock (docs/LIVESTOCK.md) - lazy-loaded the first time
+  // the "Statek" tab is opened, not during boot(), so the primary hen flow
+  // never gets slower because of a feature someone may never open ----
+  var animals = [];
+  var meatShares = [];
+  var availableProducts = [];
+  var livestockLoaded = false;
+  var addAnimalOpen = false;
+  var addAnimalDraft = {species:'', product:'', farmKey:'', dailyAmount:20, name:''};
+  var shareSharesDraft = {};  // meat_share id -> how many shares the buy stepper is currently set to
 
   // farm-finder (onboarding step 1) - transient, re-asked fresh each time
   var geoStatus = 'idle';   // idle | asking | granted | denied | unsupported
@@ -397,6 +409,7 @@
     home: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3.5 11 12 4 20.5 11"/><path d="M5.5 9.5 V20 H18.5 V9.5"/></svg>',
     list: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="16" y2="12"/><line x1="4" y1="17" x2="19" y2="17"/></svg>',
     sliders: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="14" cy="7" r="2" fill="var(--surface)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="9" cy="12" r="2" fill="var(--surface)"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2" fill="var(--surface)"/></svg>',
+    paw: '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="16.5" rx="5" ry="4"/><circle cx="6" cy="8" r="2"/><circle cx="10.5" cy="5" r="2"/><circle cx="15" cy="5.2" r="2"/><circle cx="18.5" cy="8.5" r="1.8"/></svg>',
     hen: '<svg viewBox="0 0 220 190" width="150" height="130" role="img" aria-label="Ilustrace slepičky">'+
       '<ellipse cx="95" cy="168" rx="70" ry="9" style="fill:var(--line);opacity:.5"/>'+
       '<path d="M50,92 C22,76 14,44 34,18 C42,52 54,74 66,96 Z" style="fill:var(--ink-soft);opacity:.5"/>'+
@@ -702,6 +715,128 @@
       '</div>';
   }
 
+  // ============ render: livestock (other animals + meat shares) ============
+  // See docs/LIVESTOCK.md - deliberately plainer than the hen screens
+  // above (no bespoke illustration per species), same design tokens.
+  function speciesLabel(species){
+    return {goat:'Koza', sheep:'Ovce', cow:'Kráva'}[species] || species;
+  }
+
+  function loadLivestockData(){
+    return Promise.all([
+      api('/animals'), api('/animals/available-products'), api('/meat-shares'),
+    ]).then(function(r){
+      animals = r[0]; availableProducts = r[1]; meatShares = r[2];
+      livestockLoaded = true;
+    });
+  }
+
+  function renderAddAnimalForm(){
+    var productPills = availableProducts.map(function(p){
+      var active = addAnimalDraft.species===p.species && addAnimalDraft.product===p.product;
+      return '<div class="pill pressable" data-action="pick-animal-product" data-species="'+p.species+'" data-product="'+p.product+'" data-active="'+active+'">'+speciesLabel(p.species)+' · '+escapeHtml(p.unit_label)+'</div>';
+    }).join('');
+
+    var body = '<div class="card"><div class="field-label">Druh a produkt</div><div class="pill-row">'+productPills+'</div>';
+
+    if(addAnimalDraft.species){
+      var offeringFarms = farms.filter(function(f){
+        return (f.animal_offerings||[]).some(function(o){ return o.species===addAnimalDraft.species && o.product===addAnimalDraft.product; });
+      });
+      var farmCards = offeringFarms.length ? offeringFarms.map(function(f){
+        var offering = f.animal_offerings.filter(function(o){ return o.species===addAnimalDraft.species && o.product===addAnimalDraft.product; })[0];
+        var full = offering.spots_left!=null && offering.spots_left<=0;
+        var sel = addAnimalDraft.farmKey===f.key;
+        var meta = offering.spots_left==null ? '' : (full ? 'plno' : offering.spots_left+' volných míst');
+        return '<div class="farm-card pressable" data-action="'+(full?'noop':'pick-animal-farm')+'" data-farm="'+f.key+'" data-selected="'+sel+'" style="'+(full?'opacity:.5;':'')+'">'+
+          '<div><div class="farm-name">'+escapeHtml(f.name)+'</div><div class="farm-meta">'+meta+'</div></div>'+
+          '<div class="check-circle">'+ICO.check+'</div></div>';
+      }).join('') : '<div class="empty-note">Žádná farma tohle zatím nenabízí.</div>';
+
+      body +=
+        '<div class="field-label" style="margin-top:14px;">Farma</div>'+
+        '<div style="display:flex;flex-direction:column;gap:8px;">'+farmCards+'</div>'+
+        '<div class="field-label" style="margin-top:14px;">Jméno (nepovinné)</div>'+
+        '<input class="text-input" id="add-animal-name" value="'+escapeHtml(addAnimalDraft.name)+'">'+
+        '<div class="stepper-row" style="margin-top:12px;">'+
+          '<div class="round-btn pressable" data-action="add-animal-amount-minus">'+ICO.minus+'</div>'+
+          '<div class="stepper-num">'+addAnimalDraft.dailyAmount+' Kč</div>'+
+          '<div class="round-btn pressable" data-action="add-animal-amount-plus">'+ICO.plus+'</div>'+
+        '</div>'+
+        '<div class="pressable" data-action="adopt-animal-submit" style="margin-top:12px;"><div class="btn-primary" style="font-size:13.5px;padding:12px;">Adoptovat</div></div>';
+    }
+    body += '<div class="pressable" data-action="add-animal-close" style="margin-top:8px;"><div class="btn-secondary">Zrušit</div></div></div>';
+    return body;
+  }
+
+  function renderShareCard(s){
+    var draft = shareSharesDraft[s.id] || 1;
+    var statusLabel = {open:'OTEVŘENO', full:'NAPLNĚNO', processing:'ZPRACOVÁVÁ SE', ready:'PŘIPRAVENO', fulfilled:'DOROUČENO'}[s.status] || s.status;
+    var body = '<div class="card">'+
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'+
+        '<div><div class="farm-name">'+escapeHtml(s.label)+'</div><div class="farm-meta">'+speciesLabel(s.species)+(s.includes_hide?' + kůže':'')+'</div></div>'+
+        '<span class="status-chip">'+statusLabel+'</span>'+
+      '</div>'+
+      '<div class="center-mono" style="margin-top:8px;">'+s.shares_taken+' / '+s.total_shares+' podílů · '+s.price_per_share_czk+' Kč/podíl</div>';
+    if(s.my_shares > 0){
+      body += '<div class="hint mono" style="margin-top:6px;color:var(--accent-text);">Tvůj podíl: '+s.my_shares+' ('+(s.my_shares*s.price_per_share_czk)+' Kč)'+(s.my_payout_kg!=null?' → '+s.my_payout_kg+' kg':'')+'</div>';
+    }
+    if(s.status==='open'){
+      body += '<div class="stepper-row" style="margin-top:10px;">'+
+        '<div class="round-btn pressable" data-action="share-shares-minus" data-id="'+s.id+'">'+ICO.minus+'</div>'+
+        '<div class="stepper-num">'+draft+'</div>'+
+        '<div class="round-btn pressable" data-action="share-shares-plus" data-id="'+s.id+'">'+ICO.plus+'</div>'+
+      '</div>'+
+      '<div class="pressable" data-action="share-contribute" data-id="'+s.id+'" style="margin-top:10px;"><div class="btn-primary" style="font-size:13.5px;padding:11px;">Koupit '+draft+'× podíl</div></div>';
+    }
+    body += '</div>';
+    return body;
+  }
+
+  function renderLivestock(){
+    var host = document.getElementById('main-content');
+    if(!livestockLoaded){
+      host.innerHTML = '<div class="app-h1">Statek</div><div class="center-mono" style="margin-top:24px;">Načítám…</div>';
+      loadLivestockData().then(renderLivestock).catch(function(e){ host.innerHTML = '<div class="app-h1">Statek</div><div class="error-text" style="margin-top:12px;">'+escapeHtml(e.message)+'</div>'; });
+      return;
+    }
+
+    var myAnimalsHtml = animals.length ? animals.map(function(a){
+      var info = availableProducts.filter(function(p){ return p.species===a.species && p.product===a.product; })[0] || {};
+      var farm = farms.filter(function(f){ return f.id===a.farm_id; })[0];
+      return '<div class="card">'+
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'+
+          '<div><div class="farm-name">'+escapeHtml(a.name || speciesLabel(a.species))+'</div>'+
+          '<div class="farm-meta">'+speciesLabel(a.species)+' · '+escapeHtml(info.unit_label||a.product)+(farm?' · '+escapeHtml(farm.name):'')+'</div></div>'+
+          (a.paused?'<span class="status-chip">POZASTAVENO</span>':'')+
+        '</div>'+
+        '<div class="stepper-row" style="margin-top:10px;">'+
+          '<div class="round-btn pressable" data-action="animal-amount-minus" data-id="'+a.id+'">'+ICO.minus+'</div>'+
+          '<div class="stepper-num">'+a.daily_amount+' Kč</div>'+
+          '<div class="round-btn pressable" data-action="animal-amount-plus" data-id="'+a.id+'">'+ICO.plus+'</div>'+
+        '</div>'+
+        '<div style="display:flex;gap:8px;margin-top:12px;">'+
+          '<div class="pressable" data-action="animal-toggle-pause" data-id="'+a.id+'" style="flex:1;"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">'+(a.paused?'Obnovit':'Pozastavit')+'</div></div>'+
+          '<div class="pressable" data-action="animal-cancel" data-id="'+a.id+'" style="flex:1;"><div class="btn-secondary" style="border:1.5px dashed var(--err);border-radius:4px;color:var(--err);">Zrušit</div></div>'+
+        '</div>'+
+      '</div>';
+    }).join('') : '<div class="empty-note">Zatím žádné další zvíře.</div>';
+
+    var addBlock = addAnimalOpen ? renderAddAnimalForm()
+      : '<div class="pressable" data-action="add-animal-open"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">+ Adoptovat další zvíře</div></div>';
+
+    var sharesHtml = meatShares.length ? meatShares.map(renderShareCard).join('') : '<div class="empty-note">Zatím žádné sdílené chovy.</div>';
+
+    host.innerHTML =
+      '<div class="app-h1">Statek</div>'+
+      '<div class="app-sub" style="margin-top:2px;">Kozy, ovce, krávy — mléko a vlna průběžně, maso jako sdílený chov. Vysvětlení v docs/LIVESTOCK.md.</div>'+
+      '<div class="field-label" style="margin-top:6px;">Tvoje zvířata</div>'+
+      myAnimalsHtml+
+      addBlock+
+      '<div class="field-label" style="margin-top:10px;">Sdílené chovy na maso</div>'+
+      sharesHtml;
+  }
+
   function renderPaymentSection(){
     if (me.has_saved_payment_method) {
       return '<div class="card">'+
@@ -752,7 +887,7 @@
 
   // ============ tab bar ============
   function renderTabbar(){
-    var tabs = [['home','Domů',ICO.home],['activity','Aktivita',ICO.list],['settings','Nastavení',ICO.sliders]];
+    var tabs = [['home','Domů',ICO.home],['activity','Aktivita',ICO.list],['livestock','Statek',ICO.paw],['settings','Nastavení',ICO.sliders]];
     document.getElementById('tabbar').innerHTML = tabs.map(function(t){
       var active = activeTab===t[0];
       return '<div class="tab pressable" data-action="tab" data-tab="'+t[0]+'" data-active="'+active+'">'+
@@ -764,6 +899,7 @@
     showView('main');
     if(activeTab==='home') renderHome();
     else if(activeTab==='activity') renderActivity();
+    else if(activeTab==='livestock') renderLivestock();
     else renderSettings();
     renderTabbar();
   }
@@ -934,6 +1070,70 @@
     else if(action==='select-home-day'){ selDay = el.getAttribute('data-day'); renderHome(); }
     else if(action==='filter'){ actFilter = el.getAttribute('data-filter'); renderActivity(); }
     else if(action==='logout'){ doLogout(); }
+
+    // --- livestock (docs/LIVESTOCK.md) ---
+    else if(action==='animal-amount-minus' || action==='animal-amount-plus'){
+      var aid = Number(el.getAttribute('data-id'));
+      var animalRow = animals.filter(function(x){ return x.id===aid; })[0];
+      if(!animalRow) return;
+      var nextAmt = action==='animal-amount-minus' ? Math.max(10, animalRow.daily_amount-5) : Math.min(40, animalRow.daily_amount+5);
+      api('/animals/'+aid, {method:'PATCH', body: JSON.stringify({daily_amount: nextAmt})})
+        .then(function(u){ animals = animals.map(function(x){ return x.id===aid?u:x; }); renderLivestock(); }).catch(toastError);
+    }
+    else if(action==='animal-toggle-pause'){
+      var aid2 = Number(el.getAttribute('data-id'));
+      var animalRow2 = animals.filter(function(x){ return x.id===aid2; })[0];
+      if(!animalRow2) return;
+      api('/animals/'+aid2, {method:'PATCH', body: JSON.stringify({paused: !animalRow2.paused})})
+        .then(function(u){ animals = animals.map(function(x){ return x.id===aid2?u:x; }); renderLivestock(); }).catch(toastError);
+    }
+    else if(action==='animal-cancel'){
+      var aid3 = Number(el.getAttribute('data-id'));
+      if(!window.confirm('Zrušit tohle zvíře? Nejde to vzít zpět.')) return;
+      api('/animals/'+aid3, {method:'DELETE'})
+        .then(function(){ animals = animals.filter(function(x){ return x.id!==aid3; }); renderLivestock(); }).catch(toastError);
+    }
+    else if(action==='add-animal-open'){ addAnimalOpen = true; addAnimalDraft = {species:'', product:'', farmKey:'', dailyAmount:20, name:''}; renderLivestock(); }
+    else if(action==='add-animal-close'){ addAnimalOpen = false; renderLivestock(); }
+    else if(action==='pick-animal-product'){
+      addAnimalDraft.species = el.getAttribute('data-species');
+      addAnimalDraft.product = el.getAttribute('data-product');
+      addAnimalDraft.farmKey = '';
+      renderLivestock();
+    }
+    else if(action==='pick-animal-farm'){ addAnimalDraft.farmKey = el.getAttribute('data-farm'); renderLivestock(); }
+    else if(action==='add-animal-amount-minus'){ addAnimalDraft.dailyAmount = Math.max(10, addAnimalDraft.dailyAmount-5); renderLivestock(); }
+    else if(action==='add-animal-amount-plus'){ addAnimalDraft.dailyAmount = Math.min(40, addAnimalDraft.dailyAmount+5); renderLivestock(); }
+    else if(action==='adopt-animal-submit'){
+      var nameEl = document.getElementById('add-animal-name');
+      if(nameEl) addAnimalDraft.name = nameEl.value.trim();
+      if(!addAnimalDraft.species || !addAnimalDraft.farmKey){ showToasts([{tag:'CHYBA', body:'Vyber druh i farmu.', err:true}]); return; }
+      api('/animals', {method:'POST', body: JSON.stringify({
+        species: addAnimalDraft.species, product: addAnimalDraft.product, name: addAnimalDraft.name,
+        farm_key: addAnimalDraft.farmKey, daily_amount: addAnimalDraft.dailyAmount,
+      })}).then(function(newAnimal){
+        animals.push(newAnimal);
+        addAnimalOpen = false;
+        renderLivestock();
+      }).catch(toastError);
+    }
+    else if(action==='share-shares-minus' || action==='share-shares-plus'){
+      var sid = Number(el.getAttribute('data-id'));
+      var cur = shareSharesDraft[sid] || 1;
+      shareSharesDraft[sid] = action==='share-shares-minus' ? Math.max(1, cur-1) : cur+1;
+      renderLivestock();
+    }
+    else if(action==='share-contribute'){
+      var sid2 = Number(el.getAttribute('data-id'));
+      var n = shareSharesDraft[sid2] || 1;
+      api('/meat-shares/'+sid2+'/contribute', {method:'POST', body: JSON.stringify({shares: n})})
+        .then(function(u){
+          meatShares = meatShares.map(function(x){ return x.id===sid2?u:x; });
+          delete shareSharesDraft[sid2];
+          showToasts([{tag:'PODÍL', body:'Koupeno '+n+'× podíl na „'+u.label+'“.'}]);
+          renderLivestock();
+        }).catch(toastError);
+    }
 
     // --- settings ---
     else if(action==='amount-minus' || action==='amount-plus'){

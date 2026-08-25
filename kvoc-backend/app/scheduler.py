@@ -14,7 +14,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from . import config
 from .database import SessionLocal
-from .tick import run_tick_for_all
+from .tick import run_animal_tick_for_all, run_tick_for_all
 
 _scheduler: Optional[BackgroundScheduler] = None
 
@@ -22,8 +22,10 @@ _scheduler: Optional[BackgroundScheduler] = None
 def _job() -> None:
     db = SessionLocal()
     try:
-        count = run_tick_for_all(db, dt.date.today())
-        print(f"[scheduler] daily tick ran for {count} hen(s) at {dt.datetime.now().isoformat()}")
+        today = dt.date.today()
+        hen_count = run_tick_for_all(db, today)
+        animal_count = run_animal_tick_for_all(db, today)
+        print(f"[scheduler] daily tick ran for {hen_count} hen(s), {animal_count} other animal(s) at {dt.datetime.now().isoformat()}")
     finally:
         db.close()
 
