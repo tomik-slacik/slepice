@@ -297,6 +297,7 @@ def test_adopt_hen_runs_day_one(client):
 
 
 def test_full_week_produces_a_delivery(client):
+    hen_created = dt.date.today()  # the hen can't have fed on any day before this
     headers, _ = _new_user_headers(client)
     hen = _adopt_hen(client, headers, daily_amount=20, farm_key="dvur")
     hen_id = hen["id"]
@@ -318,10 +319,15 @@ def test_full_week_produces_a_delivery(client):
     friday = dt.date.fromisoformat(d["date"])
     # every weekday between that Monday and the triggering Friday must be
     # counted, including the Friday itself - exactly the case a same-session
-    # autoflush bug would silently undercount
+    # autoflush bug would silently undercount. Capped at hen_created though:
+    # if this test runs mid-week (adopted on a Tuesday, say), the hen simply
+    # didn't exist yet on that week's Monday, so it genuinely couldn't have
+    # fed then - a real short week, not a bug, and the naive "every weekday
+    # from Monday" count would over-expect by however many days that is.
+    count_from = max(week_start, hen_created)
     expected_weekdays = sum(
-        1 for n in range((friday - week_start).days + 1)
-        if (week_start + dt.timedelta(days=n)).weekday() < 5
+        1 for n in range((friday - count_from).days + 1)
+        if (count_from + dt.timedelta(days=n)).weekday() < 5
     )
     assert d["amount"] == expected_weekdays * 20
     assert d["eggs"] == max(1, round(d["amount"] / 12.5))

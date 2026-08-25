@@ -1,6 +1,6 @@
 name: Backend tests
 
-# Runs the 40-test suite in kvoc-backend/tests on every push/PR that touches
+# Runs the test suite in kvoc-backend/tests on every push/PR that touches
 # it - so "the tests pass" is something GitHub checks automatically instead
 # of something that was only ever true on one machine, once, when someone
 # happened to run pytest by hand.
