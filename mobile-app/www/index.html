@@ -592,11 +592,14 @@
     var activeToasts = [];
     state.hens.forEach(function(hen){
       var toasts = tickHen(hen, today);
-      if(hen.id === state.activeHenId) activeToasts = activeToasts.concat(toasts);
+      if(state.activePetKind==='hen' && hen.id === state.activeHenId) activeToasts = activeToasts.concat(toasts);
     });
-    // other livestock ticks too, but never toasts over the hen-centric home
-    // screen's notifications - see the Statek tab for its own activity
-    (state.animals||[]).forEach(function(animal){ tickAnimal(animal, today); });
+    // same "only the pet currently shown on Domů gets notified" rule as
+    // hens above - whichever kind is active is the one that toasts
+    (state.animals||[]).forEach(function(animal){
+      var toasts = tickAnimal(animal, today);
+      if(state.activePetKind==='animal' && animal.id === state.activeAnimalId) activeToasts = activeToasts.concat(toasts);
+    });
     saveState();
     if(activeToasts.length) showToasts(activeToasts);
   }
@@ -878,6 +881,98 @@
         eye+
         extras+
       '</g></svg>';
+  }
+
+  // Other livestock illustrations (docs/LIVESTOCK.md) - same canvas
+  // (viewBox, ground shadow, facing right) and same "sad" mechanism (head
+  // group tilts, eye closes) as henSvg above, so the three read as one
+  // family of art rather than a mismatched add-on. Built from the same
+  // kind of simple layered shapes as the hen (ellipses/circles/paths), not
+  // full illustration - matches the hen's own economical style.
+  function goatSvg(sad){
+    var eye = sad
+      ? '<path d="M159,61 Q164,65 169,61" style="stroke:var(--ink);stroke-width:2.2" fill="none" stroke-linecap="round"/>'
+      : '<rect x="161" y="56" width="4.5" height="10" rx="2" style="fill:var(--ink)"/>';
+    var headTransform = sad ? ' transform="rotate(14 140 84)"' : '';
+    return '<svg viewBox="0 0 220 190" width="150" height="130" role="img" aria-label="'+(sad?'Ilustrace smutné kozy':'Ilustrace kozy')+'">'+
+      '<ellipse cx="95" cy="168" rx="70" ry="9" style="fill:var(--line);opacity:.5"/>'+
+      '<line x1="72" y1="138" x2="68" y2="166" style="stroke:var(--ink-soft);stroke-width:6" stroke-linecap="round"/>'+
+      '<line x1="94" y1="142" x2="92" y2="166" style="stroke:var(--ink-soft);stroke-width:6" stroke-linecap="round"/>'+
+      '<line x1="118" y1="142" x2="121" y2="166" style="stroke:var(--ink-soft);stroke-width:6" stroke-linecap="round"/>'+
+      '<line x1="138" y1="138" x2="143" y2="166" style="stroke:var(--ink-soft);stroke-width:6" stroke-linecap="round"/>'+
+      '<path d="M52,108 Q40,100 46,88" style="stroke:var(--surface-2);stroke-width:8" stroke-linecap="round" fill="none"/>'+
+      '<ellipse cx="100" cy="118" rx="62" ry="33" style="fill:var(--surface-2);stroke:var(--line);stroke-width:1.5"/>'+
+      '<g'+headTransform+'>'+
+        '<ellipse cx="133" cy="56" rx="9" ry="15" style="fill:var(--surface-2);stroke:var(--line);stroke-width:1.2" transform="rotate(-30 133 56)"/>'+
+        '<ellipse cx="170" cy="54" rx="9" ry="15" style="fill:var(--surface-2);stroke:var(--line);stroke-width:1.2" transform="rotate(25 170 54)"/>'+
+        '<path d="M147,44 Q140,27 148,16" style="stroke:var(--ink-soft);stroke-width:5" stroke-linecap="round" fill="none"/>'+
+        '<path d="M163,42 Q170,24 163,12" style="stroke:var(--ink-soft);stroke-width:5" stroke-linecap="round" fill="none"/>'+
+        '<ellipse cx="158" cy="68" rx="26" ry="23" style="fill:var(--surface-2);stroke:var(--line);stroke-width:1.5"/>'+
+        '<ellipse cx="184" cy="74" rx="13" ry="10" style="fill:var(--surface-2);stroke:var(--line);stroke-width:1.5"/>'+
+        '<ellipse cx="190" cy="71" rx="1.6" ry="2.4" style="fill:var(--ink-soft)"/>'+
+        '<ellipse cx="190" cy="77" rx="1.6" ry="2.4" style="fill:var(--ink-soft)"/>'+
+        '<path d="M180,86 L176,100 L184,88 Z" style="fill:var(--surface-2);stroke:var(--line);stroke-width:1"/>'+
+        eye+
+      '</g></svg>';
+  }
+
+  function sheepSvg(sad){
+    var eye = sad
+      ? '<path d="M160,61 Q165,65 170,61" style="stroke:var(--surface);stroke-width:2" fill="none" stroke-linecap="round"/>'
+      : '<circle cx="165" cy="61" r="3" style="fill:var(--surface)"/>';
+    var headTransform = sad ? ' transform="rotate(14 138 78)"' : '';
+    var wool = [[60,110,30],[85,98,26],[112,96,28],[138,102,25],[95,124,30],[122,122,27],[70,126,24]]
+      .map(function(c){ return '<circle cx="'+c[0]+'" cy="'+c[1]+'" r="'+c[2]+'" style="fill:var(--surface);stroke:var(--line);stroke-width:1.2"/>'; }).join('');
+    return '<svg viewBox="0 0 220 190" width="150" height="130" role="img" aria-label="'+(sad?'Ilustrace smutné ovce':'Ilustrace ovce')+'">'+
+      '<ellipse cx="95" cy="168" rx="70" ry="9" style="fill:var(--line);opacity:.5"/>'+
+      '<line x1="72" y1="140" x2="70" y2="166" style="stroke:var(--ink);stroke-width:6" stroke-linecap="round"/>'+
+      '<line x1="94" y1="144" x2="93" y2="166" style="stroke:var(--ink);stroke-width:6" stroke-linecap="round"/>'+
+      '<line x1="116" y1="142" x2="118" y2="166" style="stroke:var(--ink);stroke-width:6" stroke-linecap="round"/>'+
+      '<line x1="134" y1="138" x2="138" y2="166" style="stroke:var(--ink);stroke-width:6" stroke-linecap="round"/>'+
+      wool+
+      '<g'+headTransform+'>'+
+        '<ellipse cx="132" cy="58" rx="8" ry="11" style="fill:var(--ink);opacity:.9" transform="rotate(-20 132 58)"/>'+
+        '<ellipse cx="162" cy="52" rx="8" ry="11" style="fill:var(--ink);opacity:.9" transform="rotate(15 162 52)"/>'+
+        '<ellipse cx="158" cy="66" rx="24" ry="21" style="fill:var(--ink)"/>'+
+        eye+
+      '</g></svg>';
+  }
+
+  function cowSvg(sad){
+    var eye = sad
+      ? '<path d="M159,60 Q164,64 169,60" style="stroke:var(--ink);stroke-width:2.2" fill="none" stroke-linecap="round"/>'
+      : '<circle cx="165" cy="60" r="3.5" style="fill:var(--ink)"/>';
+    var headTransform = sad ? ' transform="rotate(13 136 82)"' : '';
+    return '<svg viewBox="0 0 220 190" width="150" height="130" role="img" aria-label="'+(sad?'Ilustrace smutné krávy':'Ilustrace krávy')+'">'+
+      '<ellipse cx="95" cy="168" rx="74" ry="9" style="fill:var(--line);opacity:.5"/>'+
+      '<line x1="66" y1="140" x2="62" y2="167" style="stroke:var(--ink-soft);stroke-width:7" stroke-linecap="round"/>'+
+      '<line x1="90" y1="145" x2="88" y2="167" style="stroke:var(--ink-soft);stroke-width:7" stroke-linecap="round"/>'+
+      '<line x1="118" y1="145" x2="121" y2="167" style="stroke:var(--ink-soft);stroke-width:7" stroke-linecap="round"/>'+
+      '<line x1="140" y1="140" x2="145" y2="167" style="stroke:var(--ink-soft);stroke-width:7" stroke-linecap="round"/>'+
+      '<path d="M50,112 Q38,120 44,136" style="stroke:var(--ink-soft);stroke-width:4" stroke-linecap="round" fill="none"/>'+
+      '<circle cx="44" cy="138" r="6" style="fill:var(--ink-soft)"/>'+
+      '<ellipse cx="102" cy="120" rx="66" ry="36" style="fill:var(--surface);stroke:var(--line);stroke-width:1.5"/>'+
+      '<path d="M60,102 Q76,94 90,104 Q80,116 60,112 Z" style="fill:var(--ink)"/>'+
+      '<path d="M108,138 Q128,132 142,142 Q130,150 110,148 Z" style="fill:var(--ink)"/>'+
+      '<circle cx="140" cy="100" r="12" style="fill:var(--ink)"/>'+
+      '<g'+headTransform+'>'+
+        '<ellipse cx="135" cy="52" rx="11" ry="9" style="fill:var(--surface);stroke:var(--line);stroke-width:1.2" transform="rotate(-15 135 52)"/>'+
+        '<ellipse cx="172" cy="50" rx="11" ry="9" style="fill:var(--surface);stroke:var(--line);stroke-width:1.2" transform="rotate(15 172 50)"/>'+
+        '<path d="M146,40 Q140,28 148,22" style="stroke:var(--ink-soft);stroke-width:4" stroke-linecap="round" fill="none"/>'+
+        '<path d="M164,39 Q170,27 163,20" style="stroke:var(--ink-soft);stroke-width:4" stroke-linecap="round" fill="none"/>'+
+        '<ellipse cx="158" cy="66" rx="26" ry="24" style="fill:var(--surface);stroke:var(--line);stroke-width:1.5"/>'+
+        '<ellipse cx="183" cy="76" rx="15" ry="12" style="fill:var(--yolk);opacity:.35"/>'+
+        '<ellipse cx="188" cy="73" rx="1.8" ry="2.6" style="fill:var(--ink-soft)"/>'+
+        '<ellipse cx="188" cy="80" rx="1.8" ry="2.6" style="fill:var(--ink-soft)"/>'+
+        eye+
+      '</g></svg>';
+  }
+
+  function animalSvg(species, sad){
+    if(species==='goat') return goatSvg(sad);
+    if(species==='sheep') return sheepSvg(sad);
+    if(species==='cow') return cowSvg(sad);
+    return goatSvg(sad);
   }
 
   // achievement medal - procedural "stamped coin": reeded edge, double ring,
@@ -1173,10 +1268,7 @@
       homeSwitcherHtml()+
       '<div class="topbar"><div><div class="app-eyebrow">'+greeting()+'</div><div class="app-h1" style="font-size:23px;margin-top:2px;">Ahoj</div></div>'+
         '<div class="avatar">'+ICO.paw+'</div></div>'+
-      '<div class="card hen-card">'+
-        '<div style="width:96px;height:96px;border-radius:50%;background:var(--surface-2);border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--accent-text);">'+
-          '<svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="16.5" rx="5" ry="4"/><circle cx="6" cy="8" r="2"/><circle cx="10.5" cy="5" r="2"/><circle cx="15" cy="5.2" r="2"/><circle cx="18.5" cy="8.5" r="1.8"/></svg>'+
-        '</div>'+
+      '<div class="card hen-card">'+animalSvg(animal.species, animal.paused)+
         '<div class="hen-name">'+escapeHtml(label)+(animal.paused?'<span class="status-chip">POZASTAVENO</span>':'')+'</div>'+
         '<div class="hen-meta">'+speciesLabel(animal.species)+' · '+info.unitLabel+(farm?' · '+escapeHtml(farm.name):'')+'</div>'+
       '</div>'+
