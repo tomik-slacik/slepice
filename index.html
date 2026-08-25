@@ -364,6 +364,11 @@
   var defaults = {
     onboarded: false, dayOffset: 0, activeTab: 'home', activeHenId: null,
     nextHenId: 1, hens: [],
+    // which pet the Home screen (and its switcher) currently shows - can be
+    // a hen or any other adopted animal. Independent from activeHenId
+    // above, which Activity/Nastavení still use on their own (see
+    // homeSwitcherHtml() vs the older henSwitcherHtml()).
+    activePetKind: 'hen', activeAnimalId: null,
     animals: [], nextAnimalId: 1,
     // one demo meat share, mirrors kvoc-backend/app/seed.py's "Kráva Bětka" -
     // myShares/status/totalYieldKg only, since there are no other real
@@ -410,6 +415,9 @@
 
   function activeHen(){
     return state.hens.filter(function(h){ return h.id === state.activeHenId; })[0] || state.hens[0] || null;
+  }
+  function activeAnimal(){
+    return state.animals.filter(function(a){ return a.id === state.activeAnimalId; })[0] || null;
   }
 
   // ============ date helpers ============
@@ -619,6 +627,37 @@
       if(dd.getTime() > today.getTime()) break;
       var k = dateKey(dd);
       if(hen.feedLog[k] && !hen.feedLog[k].bonus) sum += hen.feedLog[k].amount;
+    }
+    return sum;
+  }
+
+  // same shape as computeStreak/computeWeekBalance above, reading
+  // animal.productLog instead of hen.feedLog - used by the Statek home view
+  function computeAnimalStreak(animal){
+    var d = dateOnly(getNow());
+    var todayKey = dateKey(getNow());
+    var streak = 0;
+    for(var i=0;i<370;i++){
+      if(isWeekday(d)){
+        var key = dateKey(d);
+        if(animal.productLog[key] && !animal.productLog[key].bonus){ streak++; }
+        else if(animal.pausedDates && animal.pausedDates[key]){ /* frozen by pause */ }
+        else if(key===todayKey){ /* today not ticked yet */ }
+        else { break; }
+      }
+      d = new Date(d.getTime()-86400000);
+    }
+    return streak;
+  }
+  function computeAnimalWeekBalance(animal){
+    var mon = mondayOf(getNow());
+    var today = dateOnly(getNow());
+    var sum = 0;
+    for(var i=0;i<5;i++){
+      var dd = new Date(mon.getTime()+i*86400000);
+      if(dd.getTime() > today.getTime()) break;
+      var k = dateKey(dd);
+      if(animal.productLog[k] && !animal.productLog[k].bonus) sum += animal.productLog[k].amount;
     }
     return sum;
   }
@@ -897,6 +936,26 @@
     return '<div class="hen-switcher">'+chips+'</div>';
   }
 
+  // Home-only unified switcher - every hen AND every other adopted animal
+  // (docs/LIVESTOCK.md) in one row, so Domů can show whichever the user
+  // taps. Activity/Nastavení keep using henSwitcherHtml() above (hens
+  // only) - unchanged, on purpose, see the request this was built for.
+  function homeSwitcherHtml(){
+    var total = state.hens.length + state.animals.length;
+    if(total <= 1) return '';
+    var henChips = state.hens.map(function(h){
+      var active = state.activePetKind==='hen' && h.id===state.activeHenId;
+      return '<div class="hen-chip pressable" data-action="switch-pet" data-kind="hen" data-id="'+h.id+'" data-active="'+active+'">'+
+        '<div class="hc-avatar">'+ICO.egg+(h.paused?'<span class="hc-pause-dot"></span>':'')+'</div><span class="hc-name mono">'+escapeHtml(h.henName)+'</span></div>';
+    }).join('');
+    var animalChips = state.animals.map(function(a){
+      var active = state.activePetKind==='animal' && a.id===state.activeAnimalId;
+      return '<div class="hen-chip pressable" data-action="switch-pet" data-kind="animal" data-id="'+a.id+'" data-active="'+active+'">'+
+        '<div class="hc-avatar">'+ICO.paw+(a.paused?'<span class="hc-pause-dot"></span>':'')+'</div><span class="hc-name mono">'+escapeHtml(a.name||speciesLabel(a.species))+'</span></div>';
+    }).join('');
+    return '<div class="hen-switcher">'+henChips+animalChips+'</div>';
+  }
+
   // ============ render: onboarding ============
   // ============ render: splash ============
   // First thing anyone sees, every time the page loads - just the name and
@@ -980,6 +1039,7 @@
 
   // ============ render: home ============
   function renderHome(){
+    if(state.activePetKind==='animal' && activeAnimal()){ renderAnimalHome(); return; }
     var hen = activeHen();
     var today = getNow();
     var mon = mondayOf(today);
@@ -1033,7 +1093,7 @@
 
     var host = document.getElementById('main-content');
     host.innerHTML =
-      henSwitcherHtml()+
+      homeSwitcherHtml()+
       '<div class="topbar"><div><div class="app-eyebrow">'+greeting()+'</div><div class="app-h1" style="font-size:23px;margin-top:2px;">Ahoj</div></div>'+
         '<div class="avatar">'+ICO.egg+'</div></div>'+
       '<div class="card hen-card">'+henSvg(hen.paused, henAccessories(hen))+'<div class="hen-name">'+escapeHtml(hen.henName)+(hen.paused?'<span class="status-chip">POZASTAVENO</span>':'')+'</div>'+
@@ -1047,6 +1107,89 @@
       '</div>'+
       deliveryHtml;
   }
+
+  // Home view for an active *other* animal (goat/sheep/cow - docs/LIVESTOCK.md).
+  // Deliberately mirrors renderHome() above line for line where the shape is
+  // the same (day row, reveal panel, stat row, delivery card) - the one real
+  // difference is the hero card, which uses a plain icon instead of a
+  // species illustration (none exist yet, see LIVESTOCK.md).
+  function renderAnimalHome(){
+    var animal = activeAnimal();
+    var info = (ANIMAL_PRODUCTS[animal.species]||{})[animal.product] || {unitLabel:animal.product};
+    var farm = FARMS.filter(function(f){ return f.key===animal.farm; })[0];
+    var label = animal.name || speciesLabel(animal.species);
+    var today = getNow();
+    var mon = mondayOf(today);
+    var todayKey = dateKey(today);
+    var days = [];
+    for(var i=0;i<5;i++){
+      var dd = new Date(mon.getTime()+i*86400000);
+      var key = dateKey(dd);
+      var isToday = key===todayKey;
+      var fed = !!(animal.productLog[key] && !animal.productLog[key].bonus);
+      days.push({key:key, label:DAY_LABELS[dd.getDay()], fed:fed, today:isToday});
+    }
+    if(!selDay || days.every(function(d){return d.key!==selDay;})){
+      selDay = todayKey;
+    }
+    var selDayObj = days.filter(function(d){return d.key===selDay;})[0] || days[0];
+    var selEntry = animal.productLog[selDayObj.key];
+    var msg, amountLbl;
+    if(selEntry){ msg = selEntry.msg; amountLbl = '−'+selEntry.amount+' Kč'; }
+    else if(selDayObj.key === todayKey && animal.paused){ msg = 'Dnes je appka pozastavená — '+label+' se dnes nekrmila.'; amountLbl='—'; }
+    else if(selDayObj.key < todayKey){ msg = 'Tenhle den se '+label+' nenakrmila — appka buď ještě neběžela, nebo byla pozastavená.'; amountLbl='—'; }
+    else { msg = 'Tenhle den ještě nenastal.'; amountLbl='—'; }
+
+    var dayChips = days.map(function(d){
+      return '<div class="day-chip pressable" data-action="select-home-day" data-day="'+d.key+'" data-fed="'+d.fed+'" data-today="'+d.today+'" data-selected="'+(d.key===selDayObj.key)+'">'+
+        '<span class="mono">'+d.label+'</span><span class="dot"></span></div>';
+    }).join('');
+
+    var balance = computeAnimalWeekBalance(animal);
+    var streak = computeAnimalStreak(animal);
+
+    var deliveryHtml = '';
+    if(animal.deliveries.length){
+      var last = animal.deliveries[animal.deliveries.length-1];
+      var reachedDelivered = last.status==='delivered';
+      deliveryHtml =
+        '<div class="card">'+
+          '<div class="app-eyebrow">Pátek '+fmtDateHuman(last.date)+'</div>'+
+          '<div style="display:flex;align-items:center;justify-content:space-between;">'+
+            '<div class="egg-summary-num" style="margin-top:6px;"><span class="n">'+last.units+'</span><span class="u">'+info.unitLabel+'</span></div>'+
+            (reachedDelivered ? '<div class="mini-stamp">'+stampSvg('DORUČENO','Kvoč',56)+'</div>' : '')+
+          '</div>'+
+          '<div class="app-sub">z tvého příspěvku '+last.amount+' Kč za ten týden</div>'+
+          '<div class="stepper">'+
+            step('ready','PŘIPRAVENO',true)+
+            step('transit','NA CESTĚ',true)+
+            step('delivered','DORUČENO',reachedDelivered)+
+          '</div>'+
+        '</div>';
+    }
+
+    var host = document.getElementById('main-content');
+    host.innerHTML =
+      homeSwitcherHtml()+
+      '<div class="topbar"><div><div class="app-eyebrow">'+greeting()+'</div><div class="app-h1" style="font-size:23px;margin-top:2px;">Ahoj</div></div>'+
+        '<div class="avatar">'+ICO.paw+'</div></div>'+
+      '<div class="card hen-card">'+
+        '<div style="width:96px;height:96px;border-radius:50%;background:var(--surface-2);border:1.5px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--accent-text);">'+
+          '<svg viewBox="0 0 24 24" width="46" height="46" fill="none" stroke="currentColor" stroke-width="1.6"><ellipse cx="12" cy="16.5" rx="5" ry="4"/><circle cx="6" cy="8" r="2"/><circle cx="10.5" cy="5" r="2"/><circle cx="15" cy="5.2" r="2"/><circle cx="18.5" cy="8.5" r="1.8"/></svg>'+
+        '</div>'+
+        '<div class="hen-name">'+escapeHtml(label)+(animal.paused?'<span class="status-chip">POZASTAVENO</span>':'')+'</div>'+
+        '<div class="hen-meta">'+speciesLabel(animal.species)+' · '+info.unitLabel+(farm?' · '+escapeHtml(farm.name):'')+'</div>'+
+      '</div>'+
+      '<div><div class="field-label">Tento týden</div><div class="day-row">'+dayChips+'</div></div>'+
+      '<div class="reveal-panel"><div class="reveal-top"><span>'+selDayObj.label+' '+fmtDateHuman(selDayObj.key)+'</span><span>'+amountLbl+'</span></div>'+
+        '<div class="reveal-msg">'+escapeHtml(msg)+'</div></div>'+
+      '<div class="stat-row">'+
+        '<div class="stat-tile"><div class="label">Zůstatek k pátku</div><div class="value">'+balance+' Kč</div></div>'+
+        '<div class="stat-tile"><div class="label">Série</div><div class="value">'+streak+' dní</div></div>'+
+      '</div>'+
+      deliveryHtml;
+  }
+
   function step(key,label,reached){
     return '<div class="step" data-reached="'+reached+'"><div class="step-track">'+
       '<div class="step-line'+(key==='ready'?' first':'')+'"></div><div class="step-dot"></div>'+
@@ -1365,6 +1508,9 @@
       var aid3 = Number(el.getAttribute('data-id'));
       if(!window.confirm('Zrušit tohle zvíře? Nejde to vzít zpět.')) return;
       state.animals = state.animals.filter(function(x){ return x.id!==aid3; });
+      // Home was showing exactly this animal - fall back to the hen so it
+      // never tries to render a pet that no longer exists
+      if(state.activePetKind==='animal' && state.activeAnimalId===aid3){ state.activePetKind='hen'; }
       saveState(); renderLivestock();
     }
     else if(action==='share-shares-minus'){ shareSharesDraft = Math.max(1, shareSharesDraft-1); renderLivestock(); }
@@ -1429,6 +1575,15 @@
     else if(action==='filter'){ actFilter = el.getAttribute('data-filter'); renderActivity(); }
     else if(action==='switch-hen'){
       state.activeHenId = Number(el.getAttribute('data-hen-id'));
+      selDay = null;
+      saveState();
+      renderAll();
+    }
+    else if(action==='switch-pet'){
+      var petKind = el.getAttribute('data-kind');
+      var petId = Number(el.getAttribute('data-id'));
+      state.activePetKind = petKind;
+      if(petKind==='hen'){ state.activeHenId = petId; } else { state.activeAnimalId = petId; }
       selDay = null;
       saveState();
       renderAll();
