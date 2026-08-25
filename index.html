@@ -275,7 +275,7 @@
   var FARMS = [
     {key:'lipa',      name:'Farma U Lípy',      style:'volný výběh', town:'Sázava',      lat:49.8564, lng:14.8636, capacity:60, animalOfferings:[{species:'cow', product:'milk', capacity:25}]},
     {key:'dvur',      name:'Dvůr Na Kopci',     style:'bio chov',    town:'Benešov',     lat:49.7847, lng:14.6873, capacity:40, animalOfferings:[{species:'goat', product:'milk', capacity:20}]},
-    {key:'polana',    name:'Polana Farm',       style:'volný výběh', town:'Neveklov',    lat:49.7994, lng:14.5589, capacity:80, animalOfferings:[{species:'sheep', product:'wool', capacity:15}]},
+    {key:'polana',    name:'Polana Farm',       style:'volný výběh', town:'Neveklov',    lat:49.7994, lng:14.5589, capacity:80, animalOfferings:[]},
     {key:'ricany',    name:'Zahrada Pod Lesem', style:'bio chov',    town:'Říčany',      lat:49.9917, lng:14.6650, capacity:30, animalOfferings:[]},
     {key:'beroun',    name:'Farma Beránek',     style:'volný výběh', town:'Beroun',      lat:49.9639, lng:14.0725, capacity:50, animalOfferings:[]},
     {key:'kladno',    name:'Dvůr U Rybníka',    style:'bio chov',    town:'Kladno',      lat:50.1477, lng:14.1030, capacity:35, animalOfferings:[]},
@@ -293,8 +293,11 @@
   // kvoc-backend's Animal/MeatShare shape, generalized by species/product.
   var ANIMAL_PRODUCTS = {
     goat:  {milk: {unitLabel:'litrů mléka', kcPerUnit:25}},
-    sheep: {wool: {unitLabel:'kg vlny',     kcPerUnit:220}},
     cow:   {milk: {unitLabel:'litrů mléka', kcPerUnit:22}}
+    // sheep intentionally absent - no ongoing product anymore, meat-share
+    // only (see MEAT_SHARES below). Wool was removed on purpose (would need
+    // its own shearing/washing/spinning chain), mirrors kvoc-backend's
+    // config.ANIMAL_PRODUCTS/docs/LIVESTOCK.md.
   };
   var ANIMAL_CARE_MESSAGES = [
     'se pásla na louce.', 'dostala čerstvé seno.', 'se napila z napajedla.',
@@ -370,10 +373,16 @@
     // homeSwitcherHtml() vs the older henSwitcherHtml()).
     activePetKind: 'hen', activeAnimalId: null,
     animals: [], nextAnimalId: 1,
-    // one demo meat share, mirrors kvoc-backend/app/seed.py's "Kráva Bětka" -
-    // myShares/status/totalYieldKg only, since there are no other real
-    // customers in a single-browser offline demo to show a shared total for
-    meatShare: {label:'Kráva Bětka', species:'cow', totalShares:8, priceCzk:890, includesHide:true, myShares:0, status:'open', totalYieldKg:null}
+    // three demo meat shares, one per MEAT_SHARE_SPECIES so all three are
+    // actually demonstrable - mirrors kvoc-backend/app/seed.py's _MEAT_SHARES
+    // (same labels/prices). myShares/status/totalYieldKg only, since there
+    // are no other real customers in a single-browser offline demo to show
+    // a shared total for.
+    meatShares: [
+      {id:'cow',   label:'Kráva Bětka',  species:'cow',   totalShares:8, priceCzk:890, includesHide:true, myShares:0, status:'open', totalYieldKg:null},
+      {id:'goat',  label:'Koza Šarlota', species:'goat',  totalShares:4, priceCzk:650, includesHide:true, myShares:0, status:'open', totalYieldKg:null},
+      {id:'sheep', label:'Ovce Beruška', species:'sheep', totalShares:3, priceCzk:580, includesHide:true, myShares:0, status:'open', totalYieldKg:null}
+    ]
   };
   var state = loadState();
   if(!state || !Array.isArray(state.hens)){ state = JSON.parse(JSON.stringify(defaults)); }
@@ -397,7 +406,8 @@
   // Statek (other livestock) - transient UI state, never persisted
   var addAnimalOpen = false;
   var addAnimalDraft = {species:'', product:'', farmKey:'', dailyAmount:20, name:''};
-  var shareSharesDraft = 1;
+  var shareSharesDraft = {}; // per-share id -> stepper count, lazily 1
+  function shareDraft(id){ return shareSharesDraft[id] || 1; }
 
   // gift voucher - transient, not tied to any one hen, never persisted
   var giftOpen = false;
@@ -407,7 +417,41 @@
   function loadState(){
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
-      if(raw){ var parsed = JSON.parse(raw); return Object.assign({}, defaults, parsed); }
+      if(!raw) return null;
+      var parsed = JSON.parse(raw);
+      var merged = Object.assign({}, defaults, parsed);
+      // migrate the old singular cow-only meatShare (pre goat/sheep-share
+      // update) onto the new meatShares array, so an in-progress demo
+      // purchase from before this update isn't silently lost
+      if(parsed.meatShare && !parsed.meatShares){
+        merged.meatShares = defaults.meatShares.map(function(s){
+          if(s.species === parsed.meatShare.species){
+            return Object.assign({}, s, {
+              myShares: parsed.meatShare.myShares,
+              status: parsed.meatShare.status,
+              totalYieldKg: parsed.meatShare.totalYieldKg
+            });
+          }
+          return s;
+        });
+      }
+      delete merged.meatShare;
+      // prune any previously-adopted animal whose species/product no longer
+      // exists (sheep/wool - meat-shares took over sheep, see
+      // ANIMAL_PRODUCTS above) so nobody's Home screen is left showing a
+      // ghost pet from before this update
+      if(merged.animals && merged.animals.length){
+        var keptIds = {};
+        merged.animals = merged.animals.filter(function(a){
+          var keep = !!((ANIMAL_PRODUCTS[a.species]||{})[a.product]);
+          if(keep) keptIds[a.id] = true;
+          return keep;
+        });
+        if(merged.activePetKind==='animal' && !keptIds[merged.activeAnimalId]){
+          merged.activePetKind = 'hen';
+        }
+      }
+      return merged;
     }catch(e){}
     return null;
   }
@@ -1382,9 +1426,9 @@
     return body;
   }
 
-  function renderMeatShareCard(){
-    var s = state.meatShare;
+  function renderMeatShareCard(s){
     var statusLabel = {open:'OTEVŘENO', full:'NAPLNĚNO', ready:'PŘIPRAVENO'}[s.status] || s.status;
+    var draft = shareDraft(s.id);
     var body = '<div class="card">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">'+
         '<div><div class="farm-name">'+escapeHtml(s.label)+'</div><div class="farm-meta">'+speciesLabel(s.species)+(s.includesHide?' + kůže':'')+'</div></div>'+
@@ -1397,13 +1441,13 @@
     }
     if(s.status==='open'){
       body += '<div class="stepper-row" style="margin-top:10px;">'+
-        '<div class="round-btn pressable" data-action="share-shares-minus">'+ICO.minus+'</div>'+
-        '<div class="stepper-num">'+shareSharesDraft+'</div>'+
-        '<div class="round-btn pressable" data-action="share-shares-plus">'+ICO.plus+'</div>'+
+        '<div class="round-btn pressable" data-action="share-shares-minus" data-id="'+s.id+'">'+ICO.minus+'</div>'+
+        '<div class="stepper-num">'+draft+'</div>'+
+        '<div class="round-btn pressable" data-action="share-shares-plus" data-id="'+s.id+'">'+ICO.plus+'</div>'+
       '</div>'+
-      '<div class="pressable" data-action="share-contribute" style="margin-top:10px;"><div class="btn-primary" style="font-size:13.5px;padding:11px;">Koupit '+shareSharesDraft+'× podíl</div></div>';
+      '<div class="pressable" data-action="share-contribute" data-id="'+s.id+'" style="margin-top:10px;"><div class="btn-primary" style="font-size:13.5px;padding:11px;">Koupit '+draft+'× podíl</div></div>';
     } else if(s.status==='full' && s.myShares>0){
-      body += '<div class="pressable" data-action="share-mark-ready" style="margin-top:10px;"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">Simulovat zpracování →</div></div>';
+      body += '<div class="pressable" data-action="share-mark-ready" data-id="'+s.id+'" style="margin-top:10px;"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">Simulovat zpracování →</div></div>';
     }
     body += '</div>';
     return body;
@@ -1444,12 +1488,12 @@
     var host = document.getElementById('main-content');
     host.innerHTML =
       '<div><div class="app-eyebrow">Statek</div><div class="app-h1" style="margin-top:2px;">Kozy, ovce, krávy</div></div>'+
-      '<div class="app-sub">Mléko a vlna průběžně, maso jako sdílený chov. Simulované demo, stejně jako farmy vlevo v adopci.</div>'+
+      '<div class="app-sub">Mléko průběžně, maso jako sdílený chov. Simulované demo, stejně jako farmy vlevo v adopci.</div>'+
       '<div class="field-label" style="margin-top:6px;">Tvoje zvířata</div>'+
       myAnimalsHtml+
       addBlock+
       '<div class="field-label" style="margin-top:10px;">Sdílený chov na maso</div>'+
-      renderMeatShareCard();
+      state.meatShares.map(renderMeatShareCard).join('');
   }
 
   function renderSettings(){
@@ -1605,25 +1649,43 @@
       if(state.activePetKind==='animal' && state.activeAnimalId===aid3){ state.activePetKind='hen'; }
       saveState(); renderLivestock();
     }
-    else if(action==='share-shares-minus'){ shareSharesDraft = Math.max(1, shareSharesDraft-1); renderLivestock(); }
-    else if(action==='share-shares-plus'){ shareSharesDraft = Math.min(state.meatShare.totalShares, shareSharesDraft+1); renderLivestock(); }
+    else if(action==='share-shares-minus'){
+      var shMinusId = el.getAttribute('data-id');
+      var shMinus = state.meatShares.filter(function(x){ return x.id===shMinusId; })[0];
+      if(!shMinus) return;
+      shareSharesDraft[shMinusId] = Math.max(1, shareDraft(shMinusId)-1);
+      renderLivestock();
+    }
+    else if(action==='share-shares-plus'){
+      var shPlusId = el.getAttribute('data-id');
+      var shPlus = state.meatShares.filter(function(x){ return x.id===shPlusId; })[0];
+      if(!shPlus) return;
+      shareSharesDraft[shPlusId] = Math.min(shPlus.totalShares, shareDraft(shPlusId)+1);
+      renderLivestock();
+    }
     else if(action==='share-contribute'){
-      var s = state.meatShare;
+      var sId = el.getAttribute('data-id');
+      var s = state.meatShares.filter(function(x){ return x.id===sId; })[0];
+      if(!s) return;
       var left = s.totalShares - s.myShares;
-      var n = Math.min(shareSharesDraft, left);
+      var n = Math.min(shareDraft(sId), left);
       if(n <= 0) return;
       s.myShares += n;
       if(s.myShares >= s.totalShares) s.status = 'full';
-      shareSharesDraft = 1;
+      shareSharesDraft[sId] = 1;
       saveState();
       showToasts([{tag:'PODÍL', body:'Koupeno '+n+'× podíl na „'+s.label+'“ za '+(n*s.priceCzk)+' Kč.'}]);
       renderLivestock();
     }
     else if(action==='share-mark-ready'){
-      var s2 = state.meatShare;
-      // a realistic-ish demo yield for a cow, ~180-220kg - same "illustrative
-      // number, not a real farmer's report" honesty as everything else here
-      s2.totalYieldKg = 180 + Math.round(Math.random()*40);
+      var s2Id = el.getAttribute('data-id');
+      var s2 = state.meatShares.filter(function(x){ return x.id===s2Id; })[0];
+      if(!s2) return;
+      // a realistic-ish demo yield per species (dressed-carcass ballpark,
+      // cow much bigger than goat/sheep) - same "illustrative number, not a
+      // real farmer's report" honesty as everything else here
+      var yieldRange = {cow:[180,220], goat:[14,22], sheep:[16,24]}[s2.species] || [50,80];
+      s2.totalYieldKg = yieldRange[0] + Math.round(Math.random()*(yieldRange[1]-yieldRange[0]));
       s2.status = 'ready';
       var myPayout = Math.round(s2.totalYieldKg*s2.myShares/s2.totalShares*10)/10;
       saveState();
