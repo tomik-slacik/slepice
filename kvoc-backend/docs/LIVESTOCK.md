@@ -1,17 +1,23 @@
 # Ostatní hospodářská zvířata (koza/ovce/kráva) — co appka řeší a co ne
 
 **Aktuální stav:** dvě nové, oddělené soustavy — `Animal` pro průběžný chov
-(mléko, vlna) a `MeatShare`/`ShareContribution` pro sdílený chov na maso —
-jsou naprogramované a otestované (`tests/test_livestock.py`, včetně
+(zatím jen mléko) a `MeatShare`/`ShareContribution` pro sdílený chov na
+maso — jsou naprogramované a otestované (`tests/test_livestock.py`, včetně
 poměrného rozpočítání výtěžku podle podílu). Slepičky/vejce (`Hen`,
 `FeedLogEntry`, `Delivery`) zůstávají úplně beze změny — tohle je čistě
 přídavek, ne přepis.
 
+**Kdo dělá co (viz `config.ANIMAL_PRODUCTS` / `MEAT_SHARE_SPECIES`):**
+koza a kráva dávají průběžně mléko (`Animal`) *a* obě jdou zároveň nabídnout
+jako sdílený chov na maso (`MeatShare`). Ovce záměrně **nemá** žádný
+průběžný produkt — v appce je jen na maso. Vlna byla z appky odebraná
+schválně (bylo by potřeba samostatné zpracování - stříhání, praní,
+spřádání - viz "co appka neřeší" níž), ne přehlédnutím.
+
 ## Proč dvě oddělené soustavy, ne jedna obecná
 
-- **`Animal`** (koza→mléko, ovce→vlna, kráva→mléko): stejný model jako
-  slepička — jedno zvíře, jeden odběratel, denní krmné gesto, týdenní
-  dodávka. Žádná porážka, zvíře žije dál.
+- **`Animal`**: stejný model jako slepička — jedno zvíře, jeden odběratel,
+  denní krmné gesto, týdenní dodávka. Žádná porážka, zvíře žije dál.
 - **`MeatShare`**: jedno zvíře na maso reálně stačí na desítky lidí, takže
   to nejde napasovat na "1 zvíře = 1 odběratel". Víc lidí se skládá na
   jedno konkrétní zvíře (real-world model "cow-share" — v některých zemích
@@ -19,7 +25,7 @@ přídavek, ne přepis.
   přísnější pravidla než prodej podílu na živém zvířeti). Po zpracování se
   reálný výtěžek rozdělí přesně podle podílu.
 
-**Kůže** (`MeatShare.includes_hide`) je záměrně u masa, ne u mléka/vlny —
+**Kůže** (`MeatShare.includes_hide`) je záměrně u masa, ne u mléka —
 je to vždycky vedlejší produkt porážky, ne něco, co jde získat průběžně.
 
 ## Co appka poctivě NEřeší (a nemůže)
@@ -53,8 +59,8 @@ zátěž o dost vyšší a liší se produkt od produktu:
 - `POST /animals`, `GET/PATCH/DELETE /animals/{id}`, `.../wallet`,
   `.../product-log`, `.../deliveries` — zrcadlí `routers/hens.py`.
 - Kapacita na farmu **po jednotlivé kombinaci druh+produkt**
-  (`FarmAnimalOffering`), ne sdílená se slepičkami — kozí mléko a ovčí
-  vlna na stejné farmě mají každé svůj vlastní strop.
+  (`FarmAnimalOffering`), ne sdílená se slepičkami — kdyby jedna farma
+  nabízela třeba kozí i kravské mléko zároveň, každé má svůj vlastní strop.
 - `GET/POST /meat-shares`, `POST /meat-shares/{id}/contribute` — koupě
   podílu skutečně strhne platbu (stejný mock/Stripe vzor jako peněženka u
   slepiček), odmítne přeplnění, odmítne příspěvek do už uzavřeného chovu.

@@ -80,9 +80,11 @@ ANIMAL_PRODUCTS = {
     "goat": {
         "milk": {"unit": "l", "unit_label": "litrů mléka", "kc_per_unit": 25},
     },
-    "sheep": {
-        "wool": {"unit": "kg", "unit_label": "kg vlny", "kc_per_unit": 220},
-    },
+    # sheep intentionally has no ongoing (non-slaughter) product here -
+    # "wool" was removed on purpose: a sheep in this app is a meat-share-only
+    # species now, see MEAT_SHARE_SPECIES below. GET /animals/available-products
+    # simply won't list sheep at all, which is correct - no code elsewhere
+    # needs to special-case "sheep with no products".
     "cow": {
         "milk": {"unit": "l", "unit_label": "litrů mléka", "kc_per_unit": 22},
     },

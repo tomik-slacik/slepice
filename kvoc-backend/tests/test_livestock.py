@@ -50,7 +50,9 @@ def test_available_products_lists_the_registry(client):
     r = client.get("/animals/available-products")
     assert r.status_code == 200
     combos = {(p["species"], p["product"]) for p in r.json()}
-    assert combos == {("goat", "milk"), ("sheep", "wool"), ("cow", "milk")}
+    # sheep deliberately has no ongoing product - meat-share only, see
+    # config.ANIMAL_PRODUCTS's comment and the meat-share tests below
+    assert combos == {("goat", "milk"), ("cow", "milk")}
 
 
 def test_adopt_animal_rejects_a_farm_that_doesnt_offer_it(client):
@@ -88,31 +90,32 @@ def test_animal_capacity_is_enforced_and_freed_by_cancellation(client):
     from app import models
     from app.database import SessionLocal
 
+    # a dedicated, test-only offering on "polana" (which has no animal
+    # offering of its own since sheep/wool was removed - see config.py) -
+    # deliberately NOT touching dvur's or lipa's real seeded capacity,
+    # which test_animal_ownership_is_isolated_between_users and
+    # test_admin_run_tick_advances_animals_too also adopt against
     db = SessionLocal()
     try:
-        offering = (
-            db.query(models.FarmAnimalOffering)
-            .filter(models.FarmAnimalOffering.species == "sheep", models.FarmAnimalOffering.product == "wool")
-            .first()
-        )
-        offering.weekly_capacity = 1
+        polana = db.query(models.Farm).filter(models.Farm.key == "polana").first()
+        db.add(models.FarmAnimalOffering(farm_id=polana.id, species="goat", product="milk", weekly_capacity=1))
         db.commit()
     finally:
         db.close()
 
     headers_a, _ = _new_user_headers(client)
-    r = client.post("/animals", json={"species": "sheep", "product": "wool", "farm_key": "polana"}, headers=headers_a)
+    r = client.post("/animals", json={"species": "goat", "product": "milk", "farm_key": "polana"}, headers=headers_a)
     assert r.status_code == 201
 
     headers_b, _ = _new_user_headers(client)
-    r = client.post("/animals", json={"species": "sheep", "product": "wool", "farm_key": "polana"}, headers=headers_b)
+    r = client.post("/animals", json={"species": "goat", "product": "milk", "farm_key": "polana"}, headers=headers_b)
     assert r.status_code == 409
 
     first_id = client.get("/animals", headers=headers_a).json()[0]["id"]
     r = client.delete(f"/animals/{first_id}", headers=headers_a)
     assert r.status_code == 204
 
-    r = client.post("/animals", json={"species": "sheep", "product": "wool", "farm_key": "polana"}, headers=headers_b)
+    r = client.post("/animals", json={"species": "goat", "product": "milk", "farm_key": "polana"}, headers=headers_b)
     assert r.status_code == 201
 
 

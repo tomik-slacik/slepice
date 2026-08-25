@@ -17,16 +17,23 @@ from .models import Farm, FarmAnimalOffering, MeatShare
 # ones, since a real farm plausibly keeps more than one kind of animal.
 _ANIMAL_OFFERINGS = [
     dict(farm_key="dvur", species="goat", product="milk", weekly_capacity=20),
-    dict(farm_key="polana", species="sheep", product="wool", weekly_capacity=15),
     dict(farm_key="lipa", species="cow", product="milk", weekly_capacity=25),
+    # no sheep row here - sheep has no ongoing product (see config.py's
+    # ANIMAL_PRODUCTS comment), it's meat-share-only, below
 ]
 
-# One demo meat share so the feature isn't an empty list the first time
-# anyone looks - still fictional, same honesty caveat as the farms
-# themselves (see LOGISTICS.md): no real animal, no real farmer agreement.
+# Demo meat shares so the feature isn't an empty list the first time anyone
+# looks - still fictional, same honesty caveat as the farms themselves (see
+# LOGISTICS.md): no real animal, no real farmer agreement. One per
+# MEAT_SHARE_SPECIES so all three are actually demonstrable, not just
+# theoretically allowed by config.
 _MEAT_SHARES = [
     dict(farm_key="dvur", species="cow", label="Kráva Bětka", total_shares=8,
          price_per_share_czk=890, includes_hide=True),
+    dict(farm_key="polana", species="goat", label="Koza Šarlota", total_shares=4,
+         price_per_share_czk=650, includes_hide=True),
+    dict(farm_key="beroun", species="sheep", label="Ovce Beruška", total_shares=3,
+         price_per_share_czk=580, includes_hide=True),
 ]
 
 _FARMS = [
