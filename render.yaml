@@ -1,4 +1,4 @@
-# Render Blueprint - deploys the Kvoč API (kvoc-backend/) plus a managed
+# Render Blueprint - deploys the Mazlík API (kvoc-backend/) plus a managed
 # Postgres database. See kvoc-backend/docs/DEPLOYMENT.md for the full
 # walkthrough (this file gets you most of the way there, but Render still
 # needs you to connect your own account - that part has to be you).

@@ -5,7 +5,7 @@ workflows:
   # projekt doopravdy zkompiluje (build pro iOS Simulator, bez podpisu).
   # Je to první rozumný krok předtím, než začneš platit za cokoliv.
   ios-simulator-build:
-    name: Kvoč iOS - simulator build (bez Apple účtu)
+    name: Mazlík iOS - simulator build (bez Apple účtu)
     max_build_duration: 30
     instance_type: mac_mini_m2
     environment:
@@ -50,7 +50,7 @@ workflows:
   # tady dole u "integrations:"). Bez toho tenhle workflow spustit nejde -
   # to je v pořádku, "ios-simulator-build" výše funguje bez toho hned teď.
   ios-release:
-    name: Kvoč iOS - podepsaný release (TestFlight)
+    name: Mazlík iOS - podepsaný release (TestFlight)
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:

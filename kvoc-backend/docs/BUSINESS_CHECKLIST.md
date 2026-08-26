@@ -17,7 +17,7 @@ být hotová dřív, než tahle stránka věci — to je normální, ale nezname
       důvěryhodnost při jednání s farmáři/platební bránou/App Store
       (organizační účet), ale nese vyšší administrativní náklady. Konzultuj
       s účetním podle očekávaného objemu.
-- [ ] **Název "Kvoč"** — než se stane oficiálním jménem firmy nebo appky,
+- [ ] **Název "Mazlík"** — než se stane oficiálním jménem firmy nebo appky,
       zkontrolovat střet s existující ochrannou známkou (rejstřík ÚPV) a
       s dostupností domény.
 

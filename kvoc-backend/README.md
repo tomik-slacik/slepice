@@ -1,13 +1,14 @@
-# Kvoč API — technický základ pro reálný provoz
+# Mazlík API — technický základ pro reálný provoz
 
-Backend appky Kvoč: přihlašování, adopce slepičky, denní krmení, peněženka
-a páteční svoz. Vedle `frontend/index.html` (offline demo, `localStorage`,
+Backend appky Mazlík: přihlašování, adopce slepičky/kozy/ovce/krávy, denní
+krmení, sdílené chovy na maso, peněženka a páteční svoz. Vedle
+`frontend/index.html` (offline demo, `localStorage`,
 umí fungovat bez backendu) teď existuje i **[`app/webapp/`](app/webapp/)**
 — stejná appka, ale skutečně napojená na tohle API (přihlášení, reálná
 data, reálné platby). Otevři `http://127.0.0.1:8000/app/` po spuštění
 backendu níž.
 
-**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 22 testů
+**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 66 testů
 (`pytest`) a k tomu appka `app/webapp/` doopravdy proklikaná v prohlížeči
 (registrace, adopce, všechny záložky, pauza, mock platba, posun dne).
 Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
@@ -41,8 +42,11 @@ Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
 - **Rozjetý Android build** appky — viz [`../mobile-app/`](../mobile-app/)
 - **Jasně oddělené místo** pro push notifikace (`app/integrations/notifications.py`)
   — teď jen mockované (loguje do konzole)
-- **Testy**, které se dají spustit, ne jen přečíst (22 testů: API, auth,
-  platby)
+- **Ostatní hospodářská zvířata** (koza, ovce, kráva) — průběžné mléko
+  stejným vzorem jako slepička, plus sdílené chovy na maso (`MeatShare`) s
+  poměrným rozpočítáním výtěžku. Viz [`docs/LIVESTOCK.md`](docs/LIVESTOCK.md).
+- **Testy**, které se dají spustit, ne jen přečíst (66 testů: API, auth,
+  platby, livestock)
 - **`app/webapp/`** — appka opravdu napojená na tohle API (viz výš)
 
 ## Co v tom NENÍ (záměrně)

@@ -51,8 +51,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Kvoč API",
-    description="Technický základ appky Kvoč — adopce slepičky, denní krmení, peněženka a páteční svoz.",
+    title="Mazlík API",
+    description="Technický základ appky Mazlík — adopce slepičky/kozy/ovce/krávy, denní krmení, peněženka a páteční svoz.",
     version="0.1.0",
     lifespan=lifespan,
 )

@@ -1,4 +1,4 @@
-# Portable container for the Kvoč API - works on Render, Railway, Fly.io,
+# Portable container for the Mazlík API - works on Render, Railway, Fly.io,
 # or any other Docker-capable host. See docs/DEPLOYMENT.md.
 FROM python:3.12-slim
 

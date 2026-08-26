@@ -102,7 +102,7 @@ SMTP_HOST = os.environ.get("KVOC_SMTP_HOST", "")
 SMTP_PORT = int(os.environ.get("KVOC_SMTP_PORT", "587"))
 SMTP_USERNAME = os.environ.get("KVOC_SMTP_USERNAME", "")
 SMTP_PASSWORD = os.environ.get("KVOC_SMTP_PASSWORD", "")
-EMAIL_FROM = os.environ.get("KVOC_EMAIL_FROM", "Kvoč <noreply@kvoc.cz>")
+EMAIL_FROM = os.environ.get("KVOC_EMAIL_FROM", "Mazlík <noreply@mazlik.cz>")
 PASSWORD_RESET_EXPIRE_MINUTES = 30
 # where the reset link in the email points - the bundled webapp by default
 PASSWORD_RESET_URL_BASE = os.environ.get("KVOC_PASSWORD_RESET_URL_BASE", "/app/")

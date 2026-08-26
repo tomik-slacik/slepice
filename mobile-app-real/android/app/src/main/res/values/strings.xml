@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Kvoč</string>
-    <string name="title_activity_main">Kvoč</string>
+    <string name="app_name">Mazlík</string>
+    <string name="title_activity_main">Mazlík</string>
     <string name="package_name">cz.kvoc.app.real</string>
     <string name="custom_url_scheme">cz.kvoc.app.real</string>
 </resources>

@@ -1,4 +1,4 @@
-"""Smoke tests for the Kvoč API. Run them with `pytest` from the
+"""Smoke tests for the Mazlík API. Run them with `pytest` from the
 kvoc-backend directory - they're meant to actually be run, not just read.
 
 Uses its own sqlite file (test_kvoc.db) so it never touches whatever

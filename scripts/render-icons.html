@@ -1,0 +1,115 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Mazlík icon renderer</title></head>
+<body>
+<!--
+  Dev-only tool, not part of the shipped app. Renders frontend/logo.js's
+  mazlikLogoSvg() to every PNG size the Android launcher icons need
+  (see mobile-app/android/app/src/main/res/mipmap-*/), since no SVG
+  rasterizer (cairosvg, Inkscape, rsvg-convert, ImageMagick) is available
+  in this project's environment - a real browser's <canvas> is used instead.
+
+  Usage: open this file in a browser, open devtools console, and call
+  window.__renderAll() - it returns a Promise of one JSON object
+  {relativePath: base64PngDataWithoutPrefix} covering every mipmap-*
+  density for both ic_launcher/ic_launcher_round (full badge incl. disc)
+  and ic_launcher_foreground (badge only, scaled to fit the adaptive-icon
+  safe zone - see the comment on FOREGROUND_SCALE below). Write each entry
+  to res/mipmap-<density>/<name>.png (same for mobile-app and
+  mobile-app-real, the art is identical) and to res/values/
+  ic_launcher_background.xml's colour if that ever changes too.
+-->
+<script>
+// == mazlikLogoSvg, copied verbatim from frontend/logo.js - keep in sync ==
+function mazlikLogoSvg(opts){
+  opts = opts || {};
+  var withDisc = opts.disc !== false;
+  var vb = opts.viewBox || '0 0 200 200';
+  var disc = withDisc ? '<circle cx="100" cy="100" r="94" fill="#E8DCC3" stroke="#5B4A38" stroke-width="4"/>' : '';
+  return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="'+vb+'">'+
+    disc+
+    '<g>'+
+      '<circle cx="68" cy="68" r="30" fill="#A66A3B"/>'+
+      '<circle cx="59" cy="41" r="5.5" fill="#C4471F"/>'+
+      '<circle cx="68" cy="36" r="6.5" fill="#C4471F"/>'+
+      '<circle cx="77" cy="41" r="5.5" fill="#C4471F"/>'+
+      '<ellipse cx="75" cy="92" rx="4" ry="6" fill="#C4471F"/>'+
+      '<polygon points="82,63 94,67 82,72" fill="#DDA13B"/>'+
+      '<circle cx="71" cy="59" r="3.2" fill="#241B14"/>'+
+    '</g>'+
+    '<g>'+
+      '<path d="M114,50 Q104,38 111,26" stroke="#5B4A38" stroke-width="6.5" fill="none" stroke-linecap="round"/>'+
+      '<path d="M133,46 Q142,33 136,22" stroke="#5B4A38" stroke-width="6.5" fill="none" stroke-linecap="round"/>'+
+      '<circle cx="132" cy="68" r="30" fill="#CDBB93"/>'+
+      '<ellipse cx="106" cy="62" rx="9" ry="5.5" fill="#CDBB93" stroke="#5B4A38" stroke-width="2" transform="rotate(-25 106 62)"/>'+
+      '<ellipse cx="158" cy="62" rx="9" ry="5.5" fill="#CDBB93" stroke="#5B4A38" stroke-width="2" transform="rotate(25 158 62)"/>'+
+      '<ellipse cx="132" cy="83" rx="10" ry="7" fill="#EFE4CB"/>'+
+      '<circle cx="124" cy="65" r="3" fill="#241B14"/>'+
+      '<circle cx="140" cy="65" r="3" fill="#241B14"/>'+
+    '</g>'+
+    '<g>'+
+      '<path d="M52,107 Q44,97 52,87" stroke="#5B4A38" stroke-width="6.5" fill="none" stroke-linecap="round"/>'+
+      '<path d="M84,107 Q92,97 84,87" stroke="#5B4A38" stroke-width="6.5" fill="none" stroke-linecap="round"/>'+
+      '<circle cx="68" cy="132" r="30" fill="#F6F0E3" stroke="#5B4A38" stroke-width="3"/>'+
+      '<ellipse cx="52" cy="113" rx="7" ry="9" fill="#241B14" opacity=".9" transform="rotate(-18 52 113)"/>'+
+      '<circle cx="59" cy="128" r="3" fill="#241B14"/>'+
+      '<circle cx="77" cy="128" r="3" fill="#241B14"/>'+
+      '<ellipse cx="68" cy="146" rx="12" ry="8" fill="#DDA13B" opacity=".45"/>'+
+    '</g>'+
+    '<g>'+
+      '<circle cx="112" cy="122" r="10" fill="#F6F0E3" stroke="#CDBB93" stroke-width="1.6"/>'+
+      '<circle cx="152" cy="122" r="10" fill="#F6F0E3" stroke="#CDBB93" stroke-width="1.6"/>'+
+      '<circle cx="106" cy="145" r="9" fill="#F6F0E3" stroke="#CDBB93" stroke-width="1.6"/>'+
+      '<circle cx="158" cy="145" r="9" fill="#F6F0E3" stroke="#CDBB93" stroke-width="1.6"/>'+
+      '<circle cx="120" cy="155" r="9" fill="#F6F0E3" stroke="#CDBB93" stroke-width="1.6"/>'+
+      '<circle cx="144" cy="155" r="9" fill="#F6F0E3" stroke="#CDBB93" stroke-width="1.6"/>'+
+      '<circle cx="132" cy="158" r="9.5" fill="#F6F0E3" stroke="#CDBB93" stroke-width="1.6"/>'+
+      '<circle cx="132" cy="132" r="24" fill="#241B14"/>'+
+      '<circle cx="125" cy="127" r="3" fill="#F6F0E3"/>'+
+      '<circle cx="139" cy="127" r="3" fill="#F6F0E3"/>'+
+    '</g>'+
+    '<circle cx="100" cy="100" r="13" fill="#C4471F"/>'+
+  '</svg>';
+}
+window.mazlikLogoSvg = mazlikLogoSvg;
+
+var DENSITIES = [['mdpi',48,108],['hdpi',72,162],['xhdpi',96,216],['xxhdpi',144,324],['xxxhdpi',192,432]];
+// content diameter target = 0.42 * foreground canvas -> stays inside the
+// 66%-diameter guaranteed-safe zone with a small buffer, see this file's
+// top comment / the render-icons task notes for the full derivation.
+var FOREGROUND_SCALE = 0.42;
+
+function svgToImg(svgString){
+  return new Promise(function(resolve){
+    var svg64 = btoa(unescape(encodeURIComponent(svgString)));
+    var img = new Image();
+    img.onload = function(){ resolve(img); };
+    img.src = 'data:image/svg+xml;base64,' + svg64;
+  });
+}
+
+window.__renderAll = function(){
+  return Promise.all([svgToImg(mazlikLogoSvg({})), svgToImg(mazlikLogoSvg({disc:false}))]).then(function(imgs){
+    var fullImg = imgs[0], fgImg = imgs[1];
+    var out = {};
+    DENSITIES.forEach(function(d){
+      var density = d[0], legacySize = d[1], fgSize = d[2];
+      // ic_launcher / ic_launcher_round: full badge, fills the canvas
+      var c1 = document.createElement('canvas'); c1.width=legacySize; c1.height=legacySize;
+      c1.getContext('2d').drawImage(fullImg, 0, 0, legacySize, legacySize);
+      var b64legacy = c1.toDataURL('image/png').split(',')[1];
+      out['mipmap-'+density+'/ic_launcher.png'] = b64legacy;
+      out['mipmap-'+density+'/ic_launcher_round.png'] = b64legacy;
+      // ic_launcher_foreground: badge only, scaled into the safe zone,
+      // centred on a transparent fgSize x fgSize canvas
+      var c2 = document.createElement('canvas'); c2.width=fgSize; c2.height=fgSize;
+      var ctx2 = c2.getContext('2d');
+      var drawSize = fgSize * FOREGROUND_SCALE / 0.94; // fgImg content radius is ~94% of its own canvas
+      var offset = (fgSize - drawSize) / 2;
+      ctx2.drawImage(fgImg, offset, offset, drawSize, drawSize);
+      out['mipmap-'+density+'/ic_launcher_foreground.png'] = c2.toDataURL('image/png').split(',')[1];
+    });
+    window.__iconManifest = out;
+    return Object.keys(out).length;
+  });
+};
+</script>
+</body></html>

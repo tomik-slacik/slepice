@@ -33,9 +33,9 @@ def register(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     db.refresh(user)
 
     get_email_provider().send(
-        user.email, "Vítej v Kvoč",
-        "Ahoj!\n\nTvůj účet je založený. Teď stačí adoptovat slepičku a v pátek "
-        "dorazí první vejce.\n\nKvoč",
+        user.email, "Vítej v Mazlíkovi",
+        "Ahoj!\n\nTvůj účet je založený. Teď stačí adoptovat slepičku (nebo kozu, ovci, "
+        "krávu) a v pátek dorazí první dodávka.\n\nMazlík",
     )
     return schemas.TokenOut(access_token=create_access_token(user.id))
 
@@ -73,7 +73,7 @@ def delete_account(
     """Deletes the account and everything under it (hens, feed log,
     deliveries - see the cascade="all, delete-orphan" relationships in
     models.py). Doesn't cancel a real Stripe subscription/saved card by
-    itself - Kvoč never holds a recurring Stripe subscription object (see
+    itself - Mazlík never holds a recurring Stripe subscription object (see
     docs/PAYMENT_INTEGRATION.md, the wallet-topup model), so there is
     nothing on Stripe's side left running once this returns; a saved card
     (PaymentMethod) is simply orphaned on Stripe, not charged again.
@@ -114,10 +114,10 @@ def forgot_password(payload: schemas.ForgotPasswordIn, db: Session = Depends(get
         db.commit()
         reset_link = f"{config.PASSWORD_RESET_URL_BASE}?reset_token={token}"
         get_email_provider().send(
-            user.email, "Obnovení hesla v Kvoč",
+            user.email, "Obnovení hesla v Mazlíkovi",
             "Ahoj,\n\nněkdo (doufejme ty) požádal o obnovení hesla. Odkaz platí "
             f"{config.PASSWORD_RESET_EXPIRE_MINUTES} minut:\n\n{reset_link}\n\n"
-            "Pokud jsi o obnovení nežádal/a, nic se neděje - stačí tenhle e-mail ignorovat.\n\nKvoč",
+            "Pokud jsi o obnovení nežádal/a, nic se neděje - stačí tenhle e-mail ignorovat.\n\nMazlík",
         )
 
 

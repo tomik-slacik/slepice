@@ -1,6 +1,6 @@
 """Payment provider abstraction.
 
-Kvoč deliberately never charges a card once a day - transaction fees on a
+Mazlík deliberately never charges a card once a day - transaction fees on a
 20 Kč payment would eat a large slice of it. Instead the wallet is topped up
 in bulk (weekly or monthly) by one *real* charge, and the daily "feeding" is
 just an internal ledger entry against that balance. See

@@ -83,7 +83,7 @@ def cancel_hen(hen_id: int, current_user: models.User = Depends(get_current_user
     flag flip (that already exists via PATCH .../paused). Cascades to the
     hen's feed log, deliveries and paused-day records (see the
     cascade="all, delete-orphan" relationships on Hen in models.py) - there
-    is no separate wallet ledger to refund here, since Kvoč never holds a
+    is no separate wallet ledger to refund here, since Mazlík never holds a
     real prepaid balance (see docs/PAYMENT_INTEGRATION.md).
     """
     hen = _get_owned_hen(hen_id, current_user, db)

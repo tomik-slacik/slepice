@@ -29,7 +29,7 @@ běží prakticky beze změny.
   **skutečné push notifikace přes Capacitor Push Notifications plugin**,
   napojené na `app/integrations/notifications.py` (FCM/APNs).
 - Nevýhoda: appka bude technicky pořád "web ve WebView" — pro jednoduchou
-  appku typu Kvoč to ale často nikdo nepozná.
+  appku typu Mazlík to ale často nikdo nepozná.
 
 ### B) Nativní přepis (React Native / Flutter)
 
@@ -53,7 +53,7 @@ jestli appka vůbec stojí za nativní investici.
 
 ## Jedna věc, na kterou si dát pozor: Apple a fyzické zboží
 
-Kvoč prodává **fyzická vejce doručovaná mimo appku** — ne digitální obsah
+Mazlík prodává **fyzické zboží (vejce, mléko, podíl na mase) doručované mimo appku** — ne digitální obsah
 uvnitř appky. Podle Apple App Store Review Guidelines (sekce o fyzickém
 zboží a službách) appky tohoto typu **nemusí** používat Applein interní
 nákupní systém (In-App Purchase) a mohou platbu řešit vlastní platební

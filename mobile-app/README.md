@@ -1,4 +1,4 @@
-# Kvoč — mobilní obal (Capacitor)
+# Mazlík — mobilní obal (Capacitor)
 
 Skutečný, funkční [Capacitor](https://capacitorjs.com/) projekt, který appku
 z `frontend/index.html` zabaluje do nativní appky.

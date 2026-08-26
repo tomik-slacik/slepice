@@ -83,7 +83,7 @@ class FCMNotificationProvider(NotificationProvider):
 
         self._ensure_app()
         message = messaging.Message(
-            notification=messaging.Notification(title=f"Kvoč · {title}", body=body),
+            notification=messaging.Notification(title=f"Mazlík · {title}", body=body),
             token=device_token,
         )
         try:

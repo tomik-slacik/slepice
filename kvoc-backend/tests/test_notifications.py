@@ -77,7 +77,7 @@ def test_fcm_provider_sends_with_correct_token_and_text(firebase_creds):
 
     certificate.assert_called_once_with({"type": "service_account", "project_id": "kvoc-test"})
     init_app.assert_called_once()
-    notification_cls.assert_called_once_with(title="Kvoč · BONUS", body="Nuška má dobrý den.")
+    notification_cls.assert_called_once_with(title="Mazlík · BONUS", body="Nuška má dobrý den.")
     _, kwargs = message_cls.call_args
     assert kwargs["token"] == "device-token-xyz"
     send.assert_called_once()

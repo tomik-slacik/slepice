@@ -1,4 +1,4 @@
-# Kvoč — skutečná appka (Capacitor)
+# Mazlík — skutečná appka (Capacitor)
 
 Na rozdíl od [`mobile-app/`](../mobile-app/) (offline demo — žádné
 přihlášení, žádný backend, funguje sama o sobě) je tohle appka, co obaluje

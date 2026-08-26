@@ -27,7 +27,7 @@ konzole místo posílání.
    set KVOC_SMTP_PORT=587
    set KVOC_SMTP_USERNAME=tvuj-email@gmail.com
    set KVOC_SMTP_PASSWORD=heslo-aplikace-bez-mezer
-   set KVOC_EMAIL_FROM=Kvoč <tvuj-email@gmail.com>
+   set KVOC_EMAIL_FROM=Mazlík <tvuj-email@gmail.com>
    python run.py
    ```
 3. Zaregistruj si testovací účet — uvítací e-mail by měl doopravdy dorazit.
