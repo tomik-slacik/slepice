@@ -455,6 +455,10 @@
           merged.activePetKind = 'hen';
         }
       }
+      // the Statek tab was removed (its content moved into Domů/Nastavení,
+      // see animalsManageHtml()/meatSharesHtml()) - anyone whose saved
+      // state still points at it lands on Domů instead of a dead tab
+      if(merged.activeTab==='livestock'){ merged.activeTab = 'home'; }
       return merged;
     }catch(e){}
     return null;
@@ -683,7 +687,7 @@
   }
 
   // same shape as computeStreak/computeWeekBalance above, reading
-  // animal.productLog instead of hen.feedLog - used by the Statek home view
+  // animal.productLog instead of hen.feedLog - used by renderAnimalHome()
   function computeAnimalStreak(animal){
     var d = dateOnly(getNow());
     var todayKey = dateKey(getNow());
@@ -1307,8 +1311,8 @@
         '<div class="stat-tile"><div class="label">Série</div><div class="value">'+streak+' dní</div></div>'+
       '</div>'+
       deliveryHtml+
-      '<div class="field-label" style="margin-top:20px;">Statek</div>'+
-      statekBodyHtml();
+      '<div class="field-label" style="margin-top:20px;">Sdílený chov na maso</div>'+
+      meatSharesHtml();
   }
 
   // Home view for an active *other* animal (goat/sheep/cow - docs/LIVESTOCK.md).
@@ -1388,8 +1392,8 @@
         '<div class="stat-tile"><div class="label">Série</div><div class="value">'+streak+' dní</div></div>'+
       '</div>'+
       deliveryHtml+
-      '<div class="field-label" style="margin-top:20px;">Statek</div>'+
-      statekBodyHtml();
+      '<div class="field-label" style="margin-top:20px;">Sdílený chov na maso</div>'+
+      meatSharesHtml();
   }
 
   function step(key,label,reached){
@@ -1448,7 +1452,9 @@
   }
 
   // ============ render: settings ============
-  // ============ render: Statek (other livestock) - see docs/LIVESTOCK.md ============
+  // ============ render: other livestock helpers - see docs/LIVESTOCK.md.
+  // Feed both Nastavení (animalsManageHtml, further below) and Domů
+  // (meatSharesHtml) now that there's no separate Statek tab. ============
   function renderAddAnimalForm(){
     var productPills = [];
     Object.keys(ANIMAL_PRODUCTS).forEach(function(species){
@@ -1519,11 +1525,13 @@
     return body;
   }
 
-  // Shared between the Statek tab (renderLivestock, full page) and Home
-  // (renderHome/renderAnimalHome, appended below the active pet's own
-  // card) - "your animals" list + adopt button + meat shares, so Home
-  // shows everything the Statek tab does without leaving the screen.
-  function statekBodyHtml(){
+  // The Statek tab was removed (see git history if you need it back) -
+  // its two halves now live where they fit best instead of one dedicated
+  // panel: the animal roster + adopt flow moved into Nastavení, next to
+  // the existing "Ostatní slepičky" pattern it mirrors; the meat shares
+  // (a farm-wide thing to check in on, not tied to one pet or a setting)
+  // stayed on Domů, next to the Friday delivery card.
+  function animalsManageHtml(){
     var myAnimalsHtml = state.animals.length ? state.animals.map(function(a){
       var info = (ANIMAL_PRODUCTS[a.species]||{})[a.product] || {unitLabel:a.product};
       var farm = FARMS.filter(function(f){ return f.key===a.farm; })[0];
@@ -1555,21 +1563,11 @@
     var addBlock = addAnimalOpen ? renderAddAnimalForm()
       : '<div class="pressable" data-action="add-animal-open"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">+ Adoptovat další zvíře</div></div>';
 
-    return (
-      '<div class="field-label" style="margin-top:6px;">Tvoje zvířata</div>'+
-      myAnimalsHtml+
-      addBlock+
-      '<div class="field-label" style="margin-top:10px;">Sdílený chov na maso</div>'+
-      state.meatShares.map(renderMeatShareCard).join('')
-    );
+    return myAnimalsHtml + addBlock;
   }
 
-  function renderLivestock(){
-    var host = document.getElementById('main-content');
-    host.innerHTML =
-      '<div><div class="app-eyebrow">Statek</div><div class="app-h1" style="margin-top:2px;">Kozy, ovce, krávy</div></div>'+
-      '<div class="app-sub">Mléko průběžně, maso jako sdílený chov. Simulované demo, stejně jako farmy vlevo v adopci.</div>'+
-      statekBodyHtml();
+  function meatSharesHtml(){
+    return state.meatShares.map(renderMeatShareCard).join('');
   }
 
   function renderSettings(){
@@ -1621,6 +1619,8 @@
         '<div class="pressable" data-action="request-notif" style="margin-top:6px;"><div class="btn-primary" style="background:'+(notifPerm==='granted'?'var(--sage)':'var(--accent)')+';font-size:13.5px;padding:12px;">'+escapeHtml(notifLabel)+'</div></div>'+
         '<div class="hint mono" style="margin-top:8px;">V appce vždycky uvidíš oznámení jako lištu nahoře. Skutečná oznámení telefonu závisí na tvém prohlížeči.</div></div>'+
       giftCardHtml()+
+      '<div class="field-label" style="margin-top:16px;">Ostatní zvířata</div>'+
+      animalsManageHtml()+
       '<div class="demo-box">'+
         '<div class="app-eyebrow">Demo nástroje</div>'+
         '<div class="center-mono" style="margin-top:8px;">simulované dnes: '+fmtFull(getNow())+'</div>'+
@@ -1631,7 +1631,7 @@
 
   // ============ tab bar ============
   function renderTabbar(){
-    var tabs = [['home','Domů',ICO.home],['activity','Aktivita',ICO.list],['livestock','Statek',ICO.paw],['settings','Nastavení',ICO.sliders]];
+    var tabs = [['home','Domů',ICO.home],['activity','Aktivita',ICO.list],['settings','Nastavení',ICO.sliders]];
     document.getElementById('tabbar').innerHTML = tabs.map(function(t){
       var active = state.activeTab===t[0];
       return '<div class="tab pressable" data-action="tab" data-tab="'+t[0]+'" data-active="'+active+'">'+
@@ -1651,7 +1651,6 @@
     document.getElementById('view-main').style.display = 'flex';
     if(state.activeTab==='home') renderHome();
     else if(state.activeTab==='activity') renderActivity();
-    else if(state.activeTab==='livestock') renderLivestock();
     else renderSettings();
     renderTabbar();
   }
@@ -1678,12 +1677,12 @@
     }
     else if(action==='select-farm'){ obDraft.farm = el.getAttribute('data-farm'); renderOnboarding(); }
 
-    // --- Statek (other livestock) - also embedded on Home now, see
-    // renderHome()/renderAnimalHome(), so every handler below re-renders
-    // via renderAll() (whichever tab/pet is actually active) rather than
-    // hardcoding renderLivestock() - a hardcoded call would redraw the
-    // Statek tab even if the click actually came from the Home screen's
-    // copy of this same UI. ---
+    // --- other livestock (docs/LIVESTOCK.md) - animal management lives in
+    // Nastavení (animalsManageHtml), meat shares live on Domů
+    // (meatSharesHtml) since the Statek tab was removed. Every handler
+    // below re-renders via renderAll() (whichever tab/pet is actually
+    // active), not a hardcoded target, since the same click can now
+    // originate from either screen. ---
     else if(action==='add-animal-open'){ addAnimalOpen = true; addAnimalDraft = {species:'', product:'', farmKey:'', dailyAmount:20, name:''}; renderAll(); }
     else if(action==='add-animal-close'){ addAnimalOpen = false; renderAll(); }
     else if(action==='pick-animal-product'){

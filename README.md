@@ -7,7 +7,9 @@ domů — dřív appka jen o slepicích ("Kvoč"), teď celý malý statek.
 ## V tomhle repozitáři
 
 - **`frontend/index.html`** — appka offline: adopce, denní přehled,
-  aktivita, statek (koza/ovce/kráva, sdílené chovy na maso), nastavení.
+  aktivita, nastavení — tři záložky, ne čtyři, koza/ovce/kráva a sdílené
+  chovy na maso nemají vlastní záložku, jsou rozmístěné tam, kam
+  tematicky patří (správa zvířat v Nastavení, sdílené chovy na Domů).
   Otevři přímo v prohlížeči, nic se nemusí instalovat ani spouštět. Stav
   v `localStorage`, žádný backend potřeba.
 - **`kvoc-backend/`** — API server s **přihlašováním** (JWT, bcrypt),
