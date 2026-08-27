@@ -194,6 +194,7 @@
   .voucher::before{left:-8px;}
   .voucher::after{right:-8px;}
   .voucher-stamp{position:absolute;top:-16px;right:8px;transform:rotate(-8deg);}
+  .voucher-code{font-size:10.5px;letter-spacing:1px;color:var(--accent-text);margin-bottom:12px;}
   .voucher-row{margin-bottom:12px;}
   .voucher-row:last-child{margin-bottom:0;}
   .voucher-name{font-family:'Bitter',serif;font-weight:700;font-size:17px;}
@@ -416,7 +417,18 @@
   // gift voucher - transient, not tied to any one hen, never persisted
   var giftOpen = false;
   var giftGenerated = false;
-  var giftDraft = {recipient:'', gifter:'', amount:20, message:''};
+  var giftDraft = {recipient:'', gifter:'', amount:20, message:'', code:null};
+  // human-friendly, not cryptographically unique (no backend to check
+  // uniqueness against - see the honesty note above giftCertificateText())
+  // - just something the giver/recipient can read out loud or write down
+  // to tell one poukaz from another. Alphabet skips 0/O/1/I/L on purpose,
+  // those are the pairs people misread when copying a code by hand.
+  function generateVoucherCode(){
+    var alphabet = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+    var s = '';
+    for(var i=0;i<8;i++){ s += alphabet[Math.floor(Math.random()*alphabet.length)]; }
+    return 'MAZ-' + s.slice(0,4) + '-' + s.slice(4,8);
+  }
 
   function loadState(){
     try{
@@ -776,6 +788,7 @@
   function giftCertificateText(){
     var lines = [
       'MAZLÍK — DÁRKOVÝ POUKAZ', '',
+      'Číslo poukazu: ' + (giftDraft.code || '—'), '',
       'Pro: ' + (giftDraft.recipient || '—'),
       'Od: ' + (giftDraft.gifter || '—')
     ];
@@ -794,6 +807,7 @@
       return '<div class="card"><div class="field-label">Dárkový poukaz</div>'+
         '<div class="voucher">'+
           '<div class="voucher-stamp">'+stampSvg('DÁRKOVÝ POUKAZ','Mazlík',100)+'</div>'+
+          '<div class="voucher-code mono">'+escapeHtml(giftDraft.code||'')+'</div>'+
           '<div class="voucher-row"><div class="field-label" style="margin-bottom:2px;">Pro</div><div class="voucher-name">'+escapeHtml(giftDraft.recipient||'—')+'</div></div>'+
           '<div class="voucher-row"><div class="field-label" style="margin-bottom:2px;">Od</div><div class="voucher-from">'+escapeHtml(giftDraft.gifter||'—')+'</div></div>'+
           (giftDraft.message ? '<div class="voucher-row voucher-msg">'+escapeHtml(giftDraft.message)+'</div>' : '')+
@@ -802,7 +816,8 @@
           '<div class="center-mono">přibližně '+eggsPreview(giftDraft.amount)+' vajec týdně</div>'+
           '<div class="voucher-note">Uplatnění: otevři appku Mazlík, zvol „Adoptovat slepičku“<br>a nastav denní příspěvek na '+giftDraft.amount+' Kč.</div>'+
         '</div>'+
-        '<div class="pressable" data-action="gift-copy" style="margin-top:14px;"><div class="btn-primary" style="font-size:13px;padding:11px;">Kopírovat text</div></div>'+
+        '<div class="pressable" data-action="gift-download-pdf" id="gift-pdf-btn" style="margin-top:14px;"><div class="btn-primary" style="font-size:13px;padding:11px;">Stáhnout PDF</div></div>'+
+        '<div class="pressable" data-action="gift-copy" style="margin-top:8px;"><div class="btn-secondary">Kopírovat text</div></div>'+
         '<div class="pressable" data-action="gift-close" style="margin-top:6px;"><div class="btn-secondary">Zavřít</div></div>'+
       '</div>';
     }
@@ -831,6 +846,187 @@
     if(rEl) giftDraft.recipient = rEl.value;
     if(gEl) giftDraft.gifter = gEl.value;
     if(mEl) giftDraft.message = mEl.value;
+  }
+
+  // ============ gift voucher PDF export ============
+  // No PDF library anywhere in this project (single offline HTML file, no
+  // build step, no CDN) - so this hand-writes a minimal-but-valid PDF: draw
+  // the voucher onto a <canvas> (same fonts as the rest of the app, so
+  // Czech diacritics are just... correct, unlike trying to push text
+  // through a PDF base14 font's WinAnsiEncoding, which is missing č/ď/ě/
+  // ň/ř/ť/ů), export that canvas as a JPEG, and wrap the JPEG bytes
+  // (verbatim, no re-encoding - DCTDecode means "this stream already is a
+  // JPEG") in the smallest PDF object structure a viewer will accept:
+  // one Catalog, one Pages, one Page, one Image XObject, one content
+  // stream that places the image full-page.
+  function svgToImagePromise(svgString){
+    return new Promise(function(resolve, reject){
+      var img = new Image();
+      img.onload = function(){ resolve(img); };
+      img.onerror = reject;
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
+    });
+  }
+
+  // canvas has no built-in word-wrap - break `text` into lines no wider
+  // than maxWidth (using the ctx's already-set font to measure), draw up
+  // to maxLines of them, ellipsize the last one if there's more left over
+  function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines){
+    var words = (text||'').split(/\s+/).filter(Boolean);
+    var lines = [], line = '';
+    for(var i=0;i<words.length;i++){
+      var test = line ? line+' '+words[i] : words[i];
+      if(line && ctx.measureText(test).width > maxWidth){ lines.push(line); line = words[i]; }
+      else { line = test; }
+    }
+    if(line) lines.push(line);
+    var truncated = lines.length > maxLines;
+    lines = lines.slice(0, maxLines);
+    if(truncated){
+      var last = lines[lines.length-1];
+      while(last.length && ctx.measureText(last+'…').width > maxWidth){ last = last.slice(0,-1); }
+      lines[lines.length-1] = last+'…';
+    }
+    lines.forEach(function(l, i){ ctx.fillText(l, x, y+i*lineHeight); });
+    return lines.length;
+  }
+
+  // Renders the *current* giftDraft (must already be giftGenerated, i.e.
+  // have a code) onto a certificate-shaped canvas and returns a Promise of
+  // a JPEG data: URL. Page is A4 landscape at 72pt/in (842x595pt = exactly
+  // matches the PDF page size below, 1 canvas point = 1 PDF point) but
+  // drawn at 2x pixel density for print-quality sharpness, not just
+  // screen-quality - see SCALE below.
+  function voucherCanvasDataUrl(){
+    var W = 842, H = 595, SCALE = 2;
+    var fontSpecs = [
+      '400 34px Rye', '700 27px Bitter', '800 54px Bitter', '600 19px Bitter',
+      '600 11px "IBM Plex Mono"', '500 12px "IBM Plex Mono"', '600 13px "IBM Plex Mono"',
+      '400 14px Karla', 'italic 400 14px Karla'
+    ];
+    var fontsReady = (window.document && document.fonts && document.fonts.load)
+      ? Promise.all(fontSpecs.map(function(s){ return document.fonts.load(s).catch(function(){}); }))
+      : Promise.resolve();
+    var logoReady = svgToImagePromise(mazlikLogoSvg({size:96})).catch(function(){ return null; });
+
+    return Promise.all([fontsReady, logoReady]).then(function(results){
+      var logoImg = results[1];
+      var canvas = document.createElement('canvas');
+      canvas.width = W*SCALE; canvas.height = H*SCALE;
+      var ctx = canvas.getContext('2d');
+      ctx.scale(SCALE, SCALE);
+
+      ctx.fillStyle = '#E8DCC3'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#F6F0E3'; ctx.fillRect(26, 26, W-52, H-52);
+      ctx.strokeStyle = '#CDBB93'; ctx.lineWidth = 1.5; ctx.setLineDash([7,5]);
+      ctx.strokeRect(26, 26, W-52, H-52);
+      ctx.setLineDash([]);
+
+      var cx = W/2;
+      if(logoImg){ ctx.drawImage(logoImg, cx-42, 44, 84, 84); }
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#C4471F';
+      ctx.font = '400 34px Rye, serif';
+      ctx.fillText('Mazlík', cx, 168);
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '600 11px "IBM Plex Mono", monospace';
+      ctx.fillText('D Á R K O V Ý   P O U K A Z', cx, 190);
+
+      ctx.strokeStyle = '#CDBB93'; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(90, 214); ctx.lineTo(W-90, 214); ctx.stroke();
+      ctx.setLineDash([]);
+
+      var leftX = 90;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '600 11px "IBM Plex Mono", monospace';
+      ctx.fillText('PRO', leftX, 250);
+      ctx.fillStyle = '#241B14';
+      ctx.font = '700 27px Bitter, serif';
+      ctx.fillText(giftDraft.recipient || '—', leftX, 282);
+
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '600 11px "IBM Plex Mono", monospace';
+      ctx.fillText('OD', leftX, 314);
+      ctx.font = '600 19px Bitter, serif';
+      ctx.fillText(giftDraft.gifter || '—', leftX, 340);
+
+      if(giftDraft.message){
+        ctx.font = 'italic 400 14px Karla, sans-serif';
+        ctx.fillStyle = '#5B4A38';
+        wrapCanvasText(ctx, giftDraft.message, leftX, 372, W-2*leftX, 20, 2);
+      }
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#241B14';
+      ctx.font = '800 54px Bitter, serif';
+      ctx.fillText(giftDraft.amount+' Kč', cx, 450);
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '400 14px Karla, sans-serif';
+      ctx.fillText('denně · přibližně '+eggsPreview(giftDraft.amount)+' vajec týdně', cx, 472);
+
+      ctx.font = '500 12px "IBM Plex Mono", monospace';
+      ctx.fillText('Uplatnění: otevři appku Mazlík, zvol „Adoptovat slepičku“', cx, 506);
+      ctx.fillText('a nastav denní příspěvek na '+giftDraft.amount+' Kč.', cx, 522);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#9A371A';
+      ctx.font = '600 13px "IBM Plex Mono", monospace';
+      ctx.fillText(giftDraft.code || '', leftX, H-52);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '500 12px "IBM Plex Mono", monospace';
+      var genNow = getNow();
+      ctx.fillText('vygenerováno '+genNow.getDate()+'.'+(genNow.getMonth()+1)+'.'+genNow.getFullYear(), W-leftX, H-52);
+
+      return canvas.toDataURL('image/jpeg', 0.92);
+    });
+  }
+
+  // Hand-written minimal PDF: one page, one embedded JPEG filling it. See
+  // this section's top comment for why (no library, and it sidesteps the
+  // Czech-diacritics-in-base14-fonts problem entirely). jpegDataUrl is a
+  // "data:image/jpeg;base64,..." string; pxW/pxH are the JPEG's actual
+  // pixel dimensions (for the image dict), ptW/ptH are the PDF page size
+  // in points (72pt = 1in) that the image gets scaled to fill.
+  function buildMinimalPdf(jpegDataUrl, pxW, pxH, ptW, ptH){
+    var jpegBin = atob(jpegDataUrl.split(',')[1]); // one JS char per byte, already binary-safe
+    var parts = [], offsets = [], pos = 0;
+    function push(str){ offsets.push(pos); parts.push(str); pos += str.length; return offsets[offsets.length-1]; }
+
+    push('%PDF-1.4\n');
+    var o1 = push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+    var o2 = push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+    var o3 = push('3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Im1 4 0 R >> >> /MediaBox [0 0 '+ptW+' '+ptH+'] /Contents 5 0 R >>\nendobj\n');
+    var o4 = push('4 0 obj\n<< /Type /XObject /Subtype /Image /Width '+pxW+' /Height '+pxH+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpegBin.length+' >>\nstream\n');
+    push(jpegBin);
+    push('\nendstream\nendobj\n');
+    var contentStream = 'q '+ptW+' 0 0 '+ptH+' 0 0 cm /Im1 Do Q';
+    var o5 = push('5 0 obj\n<< /Length '+contentStream.length+' >>\nstream\n'+contentStream+'\nendstream\nendobj\n');
+
+    var xrefStart = pos;
+    var xref = 'xref\n0 6\n0000000000 65535 f \n';
+    [o1,o2,o3,o4,o5].forEach(function(o){
+      var s = ''+o; while(s.length<10) s='0'+s;
+      xref += s+' 00000 n \n';
+    });
+    push(xref);
+    push('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xrefStart+'\n%%EOF');
+
+    var full = parts.join('');
+    var bytes = new Uint8Array(full.length);
+    for(var i=0;i<full.length;i++){ bytes[i] = full.charCodeAt(i) & 0xFF; }
+    return bytes;
+  }
+
+  function downloadBlob(blob, filename){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
   }
 
   // ============ toasts ============
@@ -1039,7 +1235,13 @@
     var withDisc = opts.disc !== false;
     var size = opts.size || 170;
     var disc = withDisc ? '<circle cx="100" cy="100" r="94" fill="#E8DCC3" stroke="#5B4A38" stroke-width="4"/>' : '';
-    return '<svg viewBox="0 0 200 200" width="'+size+'" height="'+size+'" role="img" aria-label="Mazlík - slepička, koza, ovce a kráva v kruhu">'+
+    // xmlns matters here even though it's not needed just to innerHTML this
+    // into the splash - voucherCanvasDataUrl() also loads this same string
+    // as a standalone data:image/svg+xml source (new Image()), and THAT
+    // parse is strict XML, not HTML5's lenient inline-<svg> handling -
+    // found by actually loading the image and getting a silent error
+    // event, not by inspection, see this session's PDF work.
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="'+size+'" height="'+size+'" role="img" aria-label="Mazlík - slepička, koza, ovce a kráva v kruhu">'+
       disc+
       '<g>'+
         '<circle cx="68" cy="68" r="30" fill="#A66A3B"/>'+
@@ -1141,10 +1343,12 @@
     return '<div class="hen-switcher">'+chips+'</div>';
   }
 
-  // Home-only unified switcher - every hen AND every other adopted animal
-  // (docs/LIVESTOCK.md) in one row, so Domů can show whichever the user
-  // taps. Activity/Nastavení keep using henSwitcherHtml() above (hens
-  // only) - unchanged, on purpose, see the request this was built for.
+  // Unified switcher - every hen AND every other adopted animal
+  // (docs/LIVESTOCK.md) in one row. Used by Domů and Aktivita (both show
+  // whichever pet is active); Nastavení keeps its own henSwitcherHtml()
+  // above (hens only) - it's a "manage everything" screen, not a
+  // per-pet view, so switching the *focused* pet there wouldn't mean
+  // anything.
   function homeSwitcherHtml(){
     var total = state.hens.length + state.animals.length;
     if(total <= 1) return '';
@@ -1411,6 +1615,7 @@
 
   // ============ render: activity ============
   function renderActivity(){
+    if(state.activePetKind==='animal' && activeAnimal()){ renderAnimalActivity(); return; }
     var hen = activeHen();
     var entries = [];
     Object.keys(hen.feedLog).forEach(function(k){
@@ -1443,10 +1648,56 @@
 
     var host = document.getElementById('main-content');
     host.innerHTML =
-      henSwitcherHtml()+
+      homeSwitcherHtml()+
       '<div><div class="app-eyebrow">Historie · '+escapeHtml(hen.henName)+'</div><div class="app-h1" style="margin-top:2px;">Aktivita</div></div>'+
       chartHtml+
       badgesHtml(hen)+
+      '<div class="pill-row">'+filters+'</div>'+
+      '<div class="stub-list">'+list+'</div>';
+  }
+
+  // Mirrors renderActivity() above for an active *other* animal - same
+  // day-log + Friday-summary + filter shape, but no egg chart or badges
+  // (both are hen/egg-specific - same "plainer for animals" choice
+  // renderAnimalHome() already makes for its hero card).
+  function renderAnimalActivity(){
+    var animal = activeAnimal();
+    var info = (ANIMAL_PRODUCTS[animal.species]||{})[animal.product] || {unitLabel:animal.product};
+    var label = animal.name || speciesLabel(animal.species);
+    var entries = [];
+    Object.keys(animal.productLog).forEach(function(k){
+      var e = animal.productLog[k];
+      entries.push({when:e.date, type: e.bonus?'bonus':'feed', msg:e.msg, tag: e.bonus?'BONUS':('−'+e.amount+' Kč'), sortKey:k});
+    });
+    animal.deliveries.forEach(function(d){
+      entries.push({
+        when:d.date, type:'summary',
+        msg:'Ten týden jsi '+label+' krmil za '+d.amount+' Kč. '+(d.status==='delivered'?(d.units+' '+info.unitLabel+' už dorazilo.'):('Dnes odpoledne dorazí '+d.units+' '+info.unitLabel+'.')),
+        tag: d.status==='delivered'?'DORUČENO':'SOUHRN', sortKey:d.date+'-z'
+      });
+    });
+    entries.sort(function(a,b){ return a.sortKey < b.sortKey ? 1 : -1; });
+    entries = entries.slice(0,20);
+
+    var visible = entries.filter(function(e){
+      if(actFilter==='all') return true;
+      if(actFilter==='feed') return e.type==='feed';
+      return e.type==='bonus' || e.type==='summary';
+    });
+
+    var list = visible.length ? visible.map(function(e){
+      return '<div class="stub" data-type="'+e.type+'"><span class="when mono">'+fmtDateHuman(e.when)+'</span>'+
+        '<span class="msg">'+escapeHtml(e.msg)+'</span><span class="tag">'+escapeHtml(e.tag)+'</span></div>';
+    }).join('') : '<div class="empty-note">Zatím žádná aktivita v tomhle filtru.</div>';
+
+    var filters = [['all','Vše'],['feed','Krmení'],['bonus','Souhrny']].map(function(f){
+      return '<div class="pill pressable" data-action="filter" data-filter="'+f[0]+'" data-active="'+(actFilter===f[0])+'">'+f[1]+'</div>';
+    }).join('');
+
+    var host = document.getElementById('main-content');
+    host.innerHTML =
+      homeSwitcherHtml()+
+      '<div><div class="app-eyebrow">Historie · '+escapeHtml(label)+'</div><div class="app-h1" style="margin-top:2px;">Aktivita</div></div>'+
       '<div class="pill-row">'+filters+'</div>'+
       '<div class="stub-list">'+list+'</div>';
   }
@@ -1854,7 +2105,7 @@
     // --- gift voucher ---
     else if(action==='gift-open'){
       giftOpen = true; giftGenerated = false;
-      giftDraft = {recipient:'', gifter:'', amount:20, message:''};
+      giftDraft = {recipient:'', gifter:'', amount:20, message:'', code:null};
       renderSettings();
     }
     else if(action==='gift-close'){ giftOpen = false; giftGenerated = false; renderSettings(); }
@@ -1865,6 +2116,7 @@
       giftDraft.recipient = giftDraft.recipient.trim();
       giftDraft.gifter = giftDraft.gifter.trim();
       giftDraft.message = giftDraft.message.trim();
+      if(!giftDraft.code){ giftDraft.code = generateVoucherCode(); }
       giftGenerated = true;
       renderSettings();
     }
@@ -1879,6 +2131,21 @@
       } else {
         showToasts([{tag:'INFO', body:'Kopírování prohlížeč nepodporuje — text si označ a zkopíruj ručně.'}]);
       }
+    }
+    else if(action==='gift-download-pdf'){
+      var pdfBtn = document.getElementById('gift-pdf-btn');
+      if(pdfBtn) pdfBtn.style.opacity = '.6';
+      voucherCanvasDataUrl().then(function(jpegDataUrl){
+        // must match W/H/SCALE inside voucherCanvasDataUrl()
+        var pxW = 842*2, pxH = 595*2;
+        var pdfBytes = buildMinimalPdf(jpegDataUrl, pxW, pxH, 842, 595);
+        var blob = new Blob([pdfBytes], {type:'application/pdf'});
+        downloadBlob(blob, 'mazlik-poukaz-'+(giftDraft.code||'darek').toLowerCase()+'.pdf');
+        if(pdfBtn) pdfBtn.style.opacity = '';
+      }).catch(function(){
+        if(pdfBtn) pdfBtn.style.opacity = '';
+        showToasts([{tag:'CHYBA', body:'PDF se nepodařilo vytvořit — zkus to znovu.'}]);
+      });
     }
   });
 
