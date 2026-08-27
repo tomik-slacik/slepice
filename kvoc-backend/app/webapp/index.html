@@ -277,6 +277,21 @@
   var addAnimalDraft = {species:'', product:'', farmKey:'', dailyAmount:20, name:''};
   var shareSharesDraft = {};  // meat_share id -> how many shares the buy stepper is currently set to
 
+  // per-animal product-log + deliveries, keyed by animal id - separate
+  // from the livestock load above because it needs to know the animal ids
+  // first (loaded right after, see boot()) and is what lets renderActivity()
+  // show every pet's history merged into one feed, not just the hen's.
+  var animalActivity = {};
+  var animalActivityLoaded = false;
+  function loadAnimalActivityData(){
+    return Promise.all(animals.map(function(a){
+      return Promise.all([
+        api('/animals/'+a.id+'/product-log'),
+        api('/animals/'+a.id+'/deliveries'),
+      ]).then(function(r){ animalActivity[a.id] = {productLog:r[0], deliveries:r[1]}; });
+    })).then(function(){ animalActivityLoaded = true; });
+  }
+
   // farm-finder (onboarding step 1) - transient, re-asked fresh each time
   var geoStatus = 'idle';   // idle | asking | granted | denied | unsupported
   var farmRadius = 'all';   // 'all' | 10 | 25 | 50 (km) - filtered client-side once farms[] has distance_km
@@ -699,12 +714,48 @@
 
   // ============ render: activity ============
   function renderActivity(){
+    var heading = '<div><div class="app-eyebrow">Historie</div><div class="app-h1" style="margin-top:2px;">Aktivita</div></div>';
+
+    // same "load on demand, whichever screen needs it first" gate as
+    // Domů/Nastavení use for animals/meat shares (livestockLoadingGuard) -
+    // this one specifically needs the animal ids from that load before it
+    // can even ask for their product-log/deliveries, so it's a second,
+    // separate gate chained after the first.
+    var loading = livestockLoadingGuard();
+    if(loading){ document.getElementById('main-content').innerHTML = heading+loading; return; }
+    if(!animalActivityLoaded && animals.length){
+      loadAnimalActivityData().then(renderMain).catch(function(){ animalActivityLoaded = true; renderMain(); });
+      document.getElementById('main-content').innerHTML = heading+'<div class="center-mono" style="margin-top:24px;">Načítám…</div>';
+      return;
+    }
+
+    // once there's more than just the hen, every entry gets tagged with
+    // which pet it's about (see the "pet" field below) - for a single-hen
+    // account this stays exactly as it always looked, no "Nuška:" prefix
+    // clutter for the common case
+    var showPetLabel = animals.length > 0;
     var entries = [];
     feedLog.forEach(function(e){
-      entries.push({when:e.date, type: e.is_bonus?'bonus':'feed', msg:e.message, tag: e.is_bonus?'BONUS':('−'+e.amount+' Kč'), sortKey: e.date+(e.is_bonus?'-bonus':'')});
+      entries.push({when:e.date, type: e.is_bonus?'bonus':'feed', msg:e.message, tag: e.is_bonus?'BONUS':('−'+e.amount+' Kč'), pet: showPetLabel?hen.hen_name:null, sortKey: e.date+(e.is_bonus?'-bonus':'0')});
     });
     deliveries.forEach(function(d){
-      entries.push({when:d.date, type:'summary', msg:'Ten týden jsi '+hen.hen_name+' krmil za '+d.amount+' Kč. '+(d.status==='delivered'?'Vejce ('+d.eggs+') už dorazila.':'Dnes odpoledne dorazí '+d.eggs+' vajec.'), tag: d.status==='delivered'?'DORUČENO':'SOUHRN', sortKey: d.date+'-z'});
+      entries.push({when:d.date, type:'summary', msg:'Ten týden jsi '+hen.hen_name+' krmil za '+d.amount+' Kč. '+(d.status==='delivered'?'Vejce ('+d.eggs+') už dorazila.':'Dnes odpoledne dorazí '+d.eggs+' vajec.'), tag: d.status==='delivered'?'DORUČENO':'SOUHRN', pet: showPetLabel?hen.hen_name:null, sortKey: d.date+'-z'});
+    });
+    animals.forEach(function(a){
+      var act = animalActivity[a.id];
+      if(!act) return;
+      var label = a.name || speciesLabel(a.species);
+      var info = availableProducts.filter(function(p){ return p.species===a.species && p.product===a.product; })[0] || {};
+      act.productLog.forEach(function(e){
+        entries.push({when:e.date, type: e.is_bonus?'bonus':'feed', msg:e.message, tag: e.is_bonus?'BONUS':('−'+e.amount+' Kč'), pet: label, sortKey: e.date+(e.is_bonus?'-bonus':'0')});
+      });
+      act.deliveries.forEach(function(d){
+        entries.push({
+          when:d.date, type:'summary',
+          msg:'Ten týden jsi '+label+' krmil za '+d.amount+' Kč. '+(d.status==='delivered'?(d.units+' '+(info.unit_label||'')+' už dorazilo.'):('Dnes odpoledne dorazí '+d.units+' '+(info.unit_label||'')+'.')),
+          tag: d.status==='delivered'?'DORUČENO':'SOUHRN', pet: label, sortKey: d.date+'-z'
+        });
+      });
     });
     entries.sort(function(a,b){ return a.sortKey < b.sortKey ? 1 : -1; });
     entries = entries.slice(0,20);
@@ -717,7 +768,7 @@
 
     var list = visible.length ? visible.map(function(e){
       return '<div class="stub" data-type="'+e.type+'"><span class="when mono">'+fmtDateHuman(e.when)+'</span>'+
-        '<span class="msg">'+escapeHtml(e.msg)+'</span><span class="tag">'+escapeHtml(e.tag)+'</span></div>';
+        '<span class="msg">'+(e.pet?'<b>'+escapeHtml(e.pet)+':</b> ':'')+escapeHtml(e.msg)+'</span><span class="tag">'+escapeHtml(e.tag)+'</span></div>';
     }).join('') : '<div class="empty-note">Zatím žádná aktivita v tomhle filtru.</div>';
 
     var filters = [['all','Vše'],['feed','Krmení'],['bonus','Souhrny']].map(function(f){
@@ -725,7 +776,7 @@
     }).join('');
 
     document.getElementById('main-content').innerHTML =
-      '<div><div class="app-eyebrow">Historie</div><div class="app-h1" style="margin-top:2px;">Aktivita</div></div>'+
+      heading+
       '<div class="pill-row">'+filters+'</div>'+
       '<div class="stub-list">'+list+'</div>';
   }
@@ -1057,10 +1108,12 @@
         // swallowed on failure (unlike loadHenData(), which must succeed
         // for the app to be usable at all) - both still work without it,
         // just re-fetch with their own inline loading/error state via
-        // livestockLoadingGuard().
+        // livestockLoadingGuard()/renderActivity()'s own animal-activity
+        // gate. loadAnimalActivityData() is chained (not parallel) since
+        // it needs the animal ids loadLivestockData() just fetched.
         return Promise.all([
           loadHenData(),
-          loadLivestockData().catch(function(){}),
+          loadLivestockData().then(loadAnimalActivityData).catch(function(){}),
         ]).then(function(){ inferDemoOffset(); renderMain(); });
       }
       startOnboarding();
@@ -1205,6 +1258,7 @@
       })}).then(function(newAnimal){
         animals.push(newAnimal);
         addAnimalOpen = false;
+        animalActivityLoaded = false; // re-fetch so Aktivita picks up the new animal too
         renderMain();
       }).catch(toastError);
     }
