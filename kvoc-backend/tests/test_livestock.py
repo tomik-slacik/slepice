@@ -256,3 +256,66 @@ def test_meat_share_endpoints_require_admin(client):
         json={"farm_key": "dvur", "species": "cow", "label": "Neopravnena Krava", "total_shares": 1, "price_per_share_czk": 1},
     )
     assert r.status_code == 403
+
+
+# ---------------------------- admin: farm animal offerings ----------------------------
+# POST /admin/farms/{key}/animal-offerings had zero test coverage before
+# this - it's what actually lets a farm offer a species/product combo (see
+# its own docstring), so "nothing ever adopts goat milk at a farm that
+# doesn't offer it" (test_adopt_animal_rejects_a_farm_that_doesnt_offer_it
+# above) was only ever tested from the *seeded* data's side, never this
+# endpoint's.
+
+def test_add_animal_offering_lets_a_farm_start_offering_a_combo(client):
+    r = client.post(
+        "/admin/farms/ricany/animal-offerings",
+        json={"species": "goat", "product": "milk", "weekly_capacity": 5},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 201, r.text
+    assert r.json() == {"farm_key": "ricany", "species": "goat", "product": "milk", "weekly_capacity": 5}
+
+    # and it's real - a fresh adoption there now succeeds instead of 404ing
+    headers, _ = _new_user_headers(client)
+    r = client.post("/animals", json={"species": "goat", "product": "milk", "farm_key": "ricany"}, headers=headers)
+    assert r.status_code == 201, r.text
+
+
+def test_add_animal_offering_rejects_unknown_farm(client):
+    r = client.post(
+        "/admin/farms/no-such-farm/animal-offerings",
+        json={"species": "goat", "product": "milk"},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 404
+
+
+def test_add_animal_offering_rejects_a_combo_the_species_doesnt_make(client):
+    r = client.post(
+        "/admin/farms/ricany/animal-offerings",
+        json={"species": "goat", "product": "wool"},  # goats don't make wool
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 400
+
+
+def test_add_animal_offering_rejects_a_duplicate(client):
+    client.post(
+        "/admin/farms/kladno/animal-offerings",
+        json={"species": "cow", "product": "milk"},
+        headers=ADMIN_HEADERS,
+    )
+    r = client.post(
+        "/admin/farms/kladno/animal-offerings",
+        json={"species": "cow", "product": "milk"},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 409
+
+
+def test_add_animal_offering_requires_admin(client):
+    r = client.post(
+        "/admin/farms/ricany/animal-offerings",
+        json={"species": "goat", "product": "milk"},
+    )
+    assert r.status_code == 403

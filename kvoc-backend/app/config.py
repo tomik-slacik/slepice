@@ -123,3 +123,13 @@ ADMIN_TOKEN = os.environ.get("KVOC_ADMIN_TOKEN", "")
 # deployment would need this moved to somewhere shared (e.g. Redis) instead.
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_MINUTES = 15
+
+# ---- general rate limiting (see middleware.py's RateLimitMiddleware) ----
+# Per-IP, across every endpoint - separate from and much blunter than the
+# login-specific lockout above. 0 (the default) disables it outright: a
+# quiet local dev server or the test suite (which legitimately fires far
+# more requests per minute than any real single client should) would
+# otherwise start seeing 429s nobody asked for. Set a real number - a few
+# hundred is a reasonable start for a small deployment - once you're
+# somewhere real requests can actually hammer this from one IP.
+RATE_LIMIT_PER_MINUTE = int(os.environ.get("KVOC_RATE_LIMIT_PER_MINUTE", "0"))

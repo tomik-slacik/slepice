@@ -51,7 +51,44 @@ def _adopt_hen(client, headers, daily_amount=20, farm_key="lipa"):
 def test_health(client):
     r = client.get("/health")
     assert r.status_code == 200
-    assert r.json() == {"status": "ok"}
+    # database: "ok" is the whole point of this check - it actually queries
+    # the DB rather than just confirming the process can answer HTTP at all
+    assert r.json() == {"status": "ok", "database": "ok"}
+
+
+def test_health_has_a_request_id_header(client):
+    # RequestLoggingMiddleware (app/middleware.py) tags every response, not
+    # just this one endpoint - health is just a convenient place to check it
+    r = client.get("/health")
+    assert r.headers["x-request-id"]
+
+
+def test_request_id_from_the_client_is_echoed_back(client):
+    # a caller that already has its own correlation id (e.g. an upstream
+    # proxy) gets that same id back, not a fresh one that breaks the chain
+    r = client.get("/health", headers={"X-Request-Id": "my-own-trace-id"})
+    assert r.headers["x-request-id"] == "my-own-trace-id"
+
+
+def test_general_rate_limit_is_off_by_default(client):
+    from app import config
+
+    assert config.RATE_LIMIT_PER_MINUTE == 0
+    # 10 quick requests with no limit configured must all sail through -
+    # the whole point of defaulting this off is that nothing (including
+    # this test suite, which fires far more than 10 requests/minute) sees
+    # a 429 it didn't ask for
+    for _ in range(10):
+        assert client.get("/health").status_code == 200
+
+
+def test_general_rate_limit_returns_429_once_over_budget(client, monkeypatch):
+    from app import config
+
+    monkeypatch.setattr(config, "RATE_LIMIT_PER_MINUTE", 3)
+    statuses = [client.get("/health").status_code for _ in range(5)]
+    assert statuses[:3] == [200, 200, 200]
+    assert 429 in statuses[3:]
 
 
 def test_device_token_registers_and_clears(client):
@@ -151,6 +188,13 @@ def test_duplicate_registration_rejected(client):
     _, email = _new_user_headers(client)
     r = client.post("/auth/register", json={"email": email, "password": "another password entirely"})
     assert r.status_code == 409
+
+
+def test_registration_rejects_a_string_that_isnt_an_email(client):
+    # EmailStr (schemas.UserCreate) - before this, "asdf" registered a real
+    # account just fine as long as it was 3+ characters
+    r = client.post("/auth/register", json={"email": "not-an-email-at-all", "password": "correct horse battery staple"})
+    assert r.status_code == 422
 
 
 def test_change_password_requires_correct_current_password(client):
@@ -586,16 +630,46 @@ def test_admin_stats_reflect_real_data(client):
     assert s["total_users"] >= 1
     assert s["total_hens"] >= 1
     assert s["active_hens"] + s["paused_hens"] == s["total_hens"]
+    # other-livestock stats (docs/LIVESTOCK.md) - added in the same pass
+    # that noticed this endpoint had quietly stopped covering a third of
+    # the product's features
+    assert s["active_animals"] + s["paused_animals"] == s["total_animals"]
+    assert s["open_meat_shares"] <= s["total_meat_shares"]
+    assert s["meat_share_revenue_total_czk"] >= 0
 
 
 def test_admin_can_list_users_and_farms(client):
     r = client.get("/admin/users", headers=ADMIN_HEADERS)
     assert r.status_code == 200
-    assert isinstance(r.json(), list)
+    page = r.json()
+    assert set(page.keys()) == {"total", "limit", "offset", "users"}
+    assert page["total"] >= 1
+    assert isinstance(page["users"], list)
+    assert page["users"][0]["email"]  # real fields on each row, not just a count
 
     r = client.get("/admin/farms", headers=ADMIN_HEADERS)
     assert r.status_code == 200
     assert any(f["key"] == "lipa" for f in r.json())
+
+
+def test_admin_users_pagination_limit_and_offset(client):
+    _new_user_headers(client)
+    _new_user_headers(client)
+    total = client.get("/admin/users", headers=ADMIN_HEADERS).json()["total"]
+    assert total >= 2
+
+    r = client.get("/admin/users?limit=1", headers=ADMIN_HEADERS)
+    assert len(r.json()["users"]) == 1
+    assert r.json()["limit"] == 1
+
+    first_page = client.get("/admin/users?limit=1&offset=0", headers=ADMIN_HEADERS).json()["users"]
+    second_page = client.get("/admin/users?limit=1&offset=1", headers=ADMIN_HEADERS).json()["users"]
+    assert first_page[0]["id"] != second_page[0]["id"]
+
+    # a silly limit gets clamped, not rejected or taken literally
+    r = client.get("/admin/users?limit=99999", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    assert len(r.json()["users"]) <= 500
 
 
 def test_admin_can_create_and_update_a_real_farm(client):

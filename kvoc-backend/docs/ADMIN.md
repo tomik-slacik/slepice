@@ -27,17 +27,21 @@ bývalo v `app/routers/admin.py` a teď je vyřešené).
 ## Co admin přehled umí
 
 - **Přehled** — počet účtů, slepiček, aktivní/pozastavené, celkové tržby,
-  počet neúspěšných plateb.
+  počet neúspěšných plateb, a totéž pro ostatní zvířata a sdílené chovy
+  na maso (`docs/LIVESTOCK.md`).
 - **Farmy** — seznam s obsazeností, formulář na přidání skutečné farmy
   (klíč, název, poloha, kapacita) — jakmile ji přidáš, appka ji hned
   nabízí při adopci, včetně hledání podle vzdálenosti.
 - **Uživatelé** — e-mail, počet slepiček, jestli má uloženou platební
-  metodu, kdy se zaregistroval.
+  metodu, kdy se zaregistroval. `GET /admin/users` je stránkované
+  (`?limit=&offset=`, výchozí 100/stránka) — přehled zatím zobrazuje jen
+  první stránku, viz "Co (zatím) neumí" níž.
 - **Denní tik ručně** (`POST /admin/run-tick`) — stejná appka jako dřív,
   teď jen zamčená za přihlášením.
 
 ## Co (zatím) neumí
 
 Žádné mazání/blokování uživatele, žádná editace slepičky za uživatele,
-žádný graf v čase (jen aktuální čísla) — základ, co odpovídá reálnému
-provozu appky teď, ne kompletní back-office nástroj.
+žádný graf v čase (jen aktuální čísla), přehled si zatím nenačítá druhou
+stránku uživatelů sám (API to podporuje, `admin.html` ještě ne) — základ,
+co odpovídá reálnému provozu appky teď, ne kompletní back-office nástroj.

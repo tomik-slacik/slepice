@@ -8,7 +8,7 @@ umí fungovat bez backendu) teď existuje i **[`app/webapp/`](app/webapp/)**
 data, reálné platby). Otevři `http://127.0.0.1:8000/app/` po spuštění
 backendu níž.
 
-**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 66 testů
+**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 77 testů
 (`pytest`) a k tomu appka `app/webapp/` doopravdy proklikaná v prohlížeči
 (registrace, adopce, všechny záložky, pauza, mock platba, posun dne).
 Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
@@ -45,7 +45,16 @@ Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
 - **Ostatní hospodářská zvířata** (koza, ovce, kráva) — průběžné mléko
   stejným vzorem jako slepička, plus sdílené chovy na maso (`MeatShare`) s
   poměrným rozpočítáním výtěžku. Viz [`docs/LIVESTOCK.md`](docs/LIVESTOCK.md).
-- **Testy**, které se dají spustit, ne jen přečíst (66 testů: API, auth,
+- **Skutečné DB migrace** (Alembic, `migrations/`) — ne jen
+  `create_all()`. Nová verze appky s novým sloupcem v modelu se na
+  existující databázi (i s reálnými daty) aplikuje bezpečně, ne
+  "doufejme že to nikomu nerozbije produkci".
+- **Request-id logování** — každý request dostane id (viz
+  `app/middleware.py`), který jde dohledat napříč logem; obecný rate
+  limit (vypnutý ve výchozím stavu, `KVOC_RATE_LIMIT_PER_MINUTE`).
+- **Skutečná validace e-mailu** při registraci (`pydantic[email]`) —
+  dřív appka klidně založila účet na "asdf".
+- **Testy**, které se dají spustit, ne jen přečíst (77 testů: API, auth,
   platby, livestock)
 - **`app/webapp/`** — appka opravdu napojená na tohle API (viz výš)
 
@@ -127,29 +136,39 @@ pytest -v
 
 ```
 app/
-  main.py              — FastAPI aplikace, startup/shutdown, mount /static
-  auth.py               — hashování hesel (bcrypt), JWT tokeny, get_current_user
-  models.py              — databázové tabulky (User, Farm, Hen, FeedLogEntry, Delivery, PausedDay, WalletTopUp)
-  schemas.py               — validace vstupů/výstupů API
-  tick.py                    — denní byznys logika (krmení, bonus, páteční svoz, série)
-  scheduler.py                — napojení tick.py na skutečný denní cron
-  config.py                     — ceny, časy, limity, JWT a platební nastavení na jednom místě
+  main.py              — FastAPI aplikace, startup/shutdown, middleware, mount /static
+  middleware.py         — request-id logování + obecný rate limit (viz config.py)
+  auth.py                — hashování hesel (bcrypt), JWT tokeny, get_current_user
+  models.py                — databázové tabulky (User, Farm, Hen, FeedLogEntry, Delivery, PausedDay, WalletTopUp, ...)
+  database.py                — DB engine + init_db() (pouští migrace přes Alembic, viz níž)
+  schemas.py                   — validace vstupů/výstupů API
+  tick.py                        — denní byznys logika (krmení, bonus, páteční svoz, série)
+  scheduler.py                    — napojení tick.py na skutečný denní cron
+  config.py                         — ceny, časy, limity, JWT a platební nastavení na jednom místě
   integrations/
-    payments.py                    — MockPaymentProvider + funkční StripePaymentProvider
-    notifications.py                — ConsoleNotificationProvider + kam zapojit FCM/APNs
+    payments.py                        — MockPaymentProvider + funkční StripePaymentProvider
+    notifications.py                    — ConsoleNotificationProvider + kam zapojit FCM/APNs
   routers/
-    auth.py, farms.py, hens.py, wallet.py, admin.py   — HTTP endpointy
+    auth.py, farms.py, hens.py, wallet.py, animals.py, meat_shares.py, admin.py   — HTTP endpointy
   static/
-    card-setup.html                                    — holá testovací stránka pro uložení karty (Stripe.js)
+    card-setup.html                                        — holá testovací stránka pro uložení karty (Stripe.js)
+    admin.html                                               — jednoduchý admin přehled (X-Admin-Token)
   webapp/
-    index.html                                           — appka opravdu napojená na tohle API (viz "Jak to spustit")
+    index.html                                                — appka opravdu napojená na tohle API (viz "Jak to spustit")
+migrations/            — Alembic - skutečné, verzované DB migrace (ne jen create_all()).
+  versions/               Nová migrace po změně modelu: `alembic revision --autogenerate -m "popis"`,
+                           zkontrolovat vygenerovaný soubor, `alembic upgrade head`. Boot appky (init_db())
+                           tohle samo spustí, takže `python run.py` funguje bez ručního kroku i tak.
 docs/
   PAYMENT_INTEGRATION.md   — jak Stripe integraci vyzkoušet, proč peněženka místo denní karty
   APP_STORE_GUIDE.md        — stav Android/iOS cesty, co zbývá
   BUSINESS_CHECKLIST.md     — co je potřeba zařídit mimo kód (firma, farmáři, regulace)
+  LIVESTOCK.md               — koza/ovce/kráva a sdílené chovy na maso
 tests/
   test_api.py                — API, auth, vlastnictví dat mezi uživateli
-  test_payments.py            — že Stripe kód volá SDK správně (bez potřeby účtu)
+  test_livestock.py           — ostatní zvířata a sdílené chovy na maso
+  test_payments.py             — že Stripe kód volá SDK správně (bez potřeby účtu)
+  test_notifications.py         — výběr/chování notification provideru
 ```
 
 Viz i [`../mobile-app/`](../mobile-app/) — Capacitor/Android obal appky.

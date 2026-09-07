@@ -13,6 +13,10 @@ class User(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: dt.datetime.now(dt.timezone.utc),
+        onupdate=lambda: dt.datetime.now(dt.timezone.utc),
+    )
 
     # Set once the user saves a card via Stripe (see integrations/payments.py
     # and docs/PAYMENT_INTEGRATION.md). Null until then - nothing about
@@ -68,6 +72,10 @@ class Farm(Base):
     # hasn't told us its real capacity yet). See routers/hens.py's
     # adopt_hen() and docs/LOGISTICS.md.
     weekly_capacity = Column(Integer, nullable=True)
+    updated_at = Column(
+        DateTime, default=lambda: dt.datetime.now(dt.timezone.utc),
+        onupdate=lambda: dt.datetime.now(dt.timezone.utc),
+    )
 
     hens = relationship("Hen", back_populates="farm")
 
@@ -80,9 +88,9 @@ class Hen(Base):
     __tablename__ = "hens"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     hen_name = Column(String, nullable=False, default="Nuška")
-    farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False)
+    farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False, index=True)
     daily_amount = Column(Integer, nullable=False, default=20)
     address = Column(String, nullable=False, default="")
     paused = Column(Boolean, nullable=False, default=False)
@@ -92,6 +100,10 @@ class Hen(Base):
     # un-pausing a hen the user paused deliberately for their own reasons.
     paused_reason = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: dt.datetime.now(dt.timezone.utc),
+        onupdate=lambda: dt.datetime.now(dt.timezone.utc),
+    )
 
     farm = relationship("Farm", back_populates="hens")
     owner = relationship("User", back_populates="hens")
@@ -112,7 +124,7 @@ class FeedLogEntry(Base):
     __tablename__ = "feed_log_entries"
 
     id = Column(Integer, primary_key=True)
-    hen_id = Column(Integer, ForeignKey("hens.id"), nullable=False)
+    hen_id = Column(Integer, ForeignKey("hens.id"), nullable=False, index=True)
     date = Column(Date, nullable=False)
     amount = Column(Integer, nullable=False)
     message = Column(String, nullable=False)
@@ -125,7 +137,7 @@ class Delivery(Base):
     __tablename__ = "deliveries"
 
     id = Column(Integer, primary_key=True)
-    hen_id = Column(Integer, ForeignKey("hens.id"), nullable=False)
+    hen_id = Column(Integer, ForeignKey("hens.id"), nullable=False, index=True)
     week_start = Column(Date, nullable=False)
     date = Column(Date, nullable=False)  # the Friday the delivery was triggered on
     amount = Column(Integer, nullable=False)
@@ -144,7 +156,7 @@ class WalletTopUp(Base):
     __tablename__ = "wallet_topups"
 
     id = Column(Integer, primary_key=True)
-    hen_id = Column(Integer, ForeignKey("hens.id"), nullable=False)
+    hen_id = Column(Integer, ForeignKey("hens.id"), nullable=False, index=True)
     amount_czk = Column(Integer, nullable=False)
     provider = Column(String, nullable=False)  # "mock" | "stripe"
     provider_reference = Column(String, nullable=False)
@@ -165,7 +177,7 @@ class PausedDay(Base):
     __tablename__ = "paused_days"
 
     id = Column(Integer, primary_key=True)
-    hen_id = Column(Integer, ForeignKey("hens.id"), nullable=False)
+    hen_id = Column(Integer, ForeignKey("hens.id"), nullable=False, index=True)
     date = Column(Date, nullable=False)
 
     hen = relationship("Hen", back_populates="paused_days")
@@ -194,7 +206,7 @@ class FarmAnimalOffering(Base):
     __tablename__ = "farm_animal_offerings"
 
     id = Column(Integer, primary_key=True)
-    farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False)
+    farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False, index=True)
     species = Column(String, nullable=False)   # "goat" | "sheep" | "cow" - see config.ANIMAL_PRODUCTS
     product = Column(String, nullable=False)   # "milk" | "wool" - must be valid for that species
     weekly_capacity = Column(Integer, nullable=True)  # None = not tracked/unlimited, same convention as Farm.weekly_capacity
@@ -213,16 +225,20 @@ class Animal(Base):
     __tablename__ = "animals"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     species = Column(String, nullable=False)
     product = Column(String, nullable=False)
     name = Column(String, nullable=False, default="")
-    farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False)
+    farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False, index=True)
     daily_amount = Column(Integer, nullable=False, default=20)
     address = Column(String, nullable=False, default="")
     paused = Column(Boolean, nullable=False, default=False)
     paused_reason = Column(String, nullable=True)  # same "billing" convention as Hen.paused_reason
     created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: dt.datetime.now(dt.timezone.utc),
+        onupdate=lambda: dt.datetime.now(dt.timezone.utc),
+    )
 
     farm = relationship("Farm")
     owner = relationship("User", back_populates="animals")
@@ -243,7 +259,7 @@ class AnimalProductLogEntry(Base):
     __tablename__ = "animal_product_log_entries"
 
     id = Column(Integer, primary_key=True)
-    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False)
+    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False, index=True)
     date = Column(Date, nullable=False)
     amount = Column(Integer, nullable=False)
     message = Column(String, nullable=False)
@@ -256,7 +272,7 @@ class AnimalDelivery(Base):
     __tablename__ = "animal_deliveries"
 
     id = Column(Integer, primary_key=True)
-    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False)
+    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False, index=True)
     week_start = Column(Date, nullable=False)
     date = Column(Date, nullable=False)
     amount = Column(Integer, nullable=False)
@@ -270,7 +286,7 @@ class AnimalPausedDay(Base):
     __tablename__ = "animal_paused_days"
 
     id = Column(Integer, primary_key=True)
-    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False)
+    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False, index=True)
     date = Column(Date, nullable=False)
 
     animal = relationship("Animal", back_populates="paused_days")
@@ -292,7 +308,7 @@ class MeatShare(Base):
     __tablename__ = "meat_shares"
 
     id = Column(Integer, primary_key=True)
-    farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False)
+    farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False, index=True)
     species = Column(String, nullable=False)  # "cow" | "goat" | "sheep"
     label = Column(String, nullable=False)  # e.g. "Kráva Bětka" - same "you know whose it is" idea as a hen's name
     total_shares = Column(Integer, nullable=False)
@@ -304,6 +320,10 @@ class MeatShare(Base):
     # slaughter yield, which nobody can know until it actually happens.
     total_yield_kg = Column(Float, nullable=True)
     created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+    updated_at = Column(
+        DateTime, default=lambda: dt.datetime.now(dt.timezone.utc),
+        onupdate=lambda: dt.datetime.now(dt.timezone.utc),
+    )
 
     farm = relationship("Farm")
     contributions = relationship(
@@ -321,8 +341,8 @@ class ShareContribution(Base):
     __tablename__ = "share_contributions"
 
     id = Column(Integer, primary_key=True)
-    meat_share_id = Column(Integer, ForeignKey("meat_shares.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    meat_share_id = Column(Integer, ForeignKey("meat_shares.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     shares = Column(Integer, nullable=False)
     amount_czk = Column(Integer, nullable=False)
     provider_reference = Column(String, nullable=False, default="")

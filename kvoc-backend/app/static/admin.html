@@ -78,8 +78,9 @@
     </div>
 
     <div class="card">
-      <h2>Uživatelé</h2>
+      <h2>Uživatelé <span id="users-count" class="mono" style="font-weight:400;font-size:13px;"></span></h2>
       <table id="users-table"><thead><tr><th>E-mail</th><th>Slepičky</th><th>Karta</th><th>Založeno</th></tr></thead><tbody></tbody></table>
+      <div class="mono" style="margin-top:8px;font-size:12px;color:#666;">Prvních 100 (nejnovější) - <code>GET /admin/users?offset=100</code> pro další.</div>
     </div>
   </div>
 </div>
@@ -114,7 +115,10 @@
   function renderStats(s){
     var items = [
       ['Účty', s.total_users], ['Slepičky', s.total_hens], ['Aktivní', s.active_hens],
-      ['Pozastavené', s.paused_hens], ['Tržby (Kč)', s.revenue_total_czk], ['Neúspěšné platby', s.failed_topups]
+      ['Pozastavené', s.paused_hens], ['Tržby (Kč)', s.revenue_total_czk], ['Neúspěšné platby', s.failed_topups],
+      ['Ostatní zvířata', s.total_animals], ['Aktivní zvířata', s.active_animals],
+      ['Sdílené chovy', s.total_meat_shares], ['Otevřené chovy', s.open_meat_shares],
+      ['Tržby z chovů (Kč)', s.meat_share_revenue_total_czk]
     ];
     document.getElementById('stats').innerHTML = items.map(function(i){
       return '<div class="stat"><div class="n mono">'+i[1]+'</div><div class="l">'+i[0]+'</div></div>';
@@ -129,8 +133,11 @@
     }).join('');
   }
 
-  function renderUsers(users){
-    document.querySelector('#users-table tbody').innerHTML = users.map(function(u){
+  function renderUsers(page){
+    // GET /admin/users now returns {total, limit, offset, users: [...]}
+    // (paginated - see admin.py), not a bare array
+    document.getElementById('users-count').textContent = '('+page.users.length+' z '+page.total+')';
+    document.querySelector('#users-table tbody').innerHTML = page.users.map(function(u){
       return '<tr><td>'+u.email+'</td><td>'+u.hen_count+'</td><td>'+(u.has_saved_payment_method?'ano':'ne')+'</td><td class="mono">'+(u.created_at||'').slice(0,10)+'</td></tr>';
     }).join('');
   }

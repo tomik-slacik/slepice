@@ -43,6 +43,18 @@ def get_stats(db: Session = Depends(get_db)):
         .scalar()
     )
     failed_topups = db.query(func.count(models.WalletTopUp.id)).filter(models.WalletTopUp.status == "failed").scalar()
+
+    # Added together with the rest of docs/LIVESTOCK.md's feature, but this
+    # endpoint predates it and nobody came back to extend the overview -
+    # an ops dashboard that quietly stopped covering a third of the
+    # product the day that feature shipped isn't "done", see the "maximally
+    # improve the backend" pass this was written in.
+    total_animals = db.query(func.count(models.Animal.id)).scalar()
+    active_animals = db.query(func.count(models.Animal.id)).filter(models.Animal.paused.is_(False)).scalar()
+    total_meat_shares = db.query(func.count(models.MeatShare.id)).scalar()
+    open_meat_shares = db.query(func.count(models.MeatShare.id)).filter(models.MeatShare.status == "open").scalar()
+    meat_share_revenue_total = db.query(func.coalesce(func.sum(models.ShareContribution.amount_czk), 0)).scalar()
+
     return {
         "total_users": total_users,
         "total_hens": total_hens,
@@ -50,23 +62,60 @@ def get_stats(db: Session = Depends(get_db)):
         "paused_hens": total_hens - active_hens,
         "revenue_total_czk": revenue_total,
         "failed_topups": failed_topups,
+        "total_animals": total_animals,
+        "active_animals": active_animals,
+        "paused_animals": total_animals - active_animals,
+        "total_meat_shares": total_meat_shares,
+        "open_meat_shares": open_meat_shares,
+        "meat_share_revenue_total_czk": meat_share_revenue_total,
     }
 
 
 @router.get("/users")
-def list_users(db: Session = Depends(get_db)):
-    users = db.query(models.User).order_by(models.User.created_at.desc()).all()
-    return [
-        {
-            "id": u.id,
-            "email": u.email,
-            "created_at": u.created_at,
-            "hen_count": len(u.hens),
-            "has_saved_payment_method": bool(u.stripe_customer_id),
-            "is_admin": u.is_admin,
-        }
-        for u in users
-    ]
+def list_users(limit: int = 100, offset: int = 0, db: Session = Depends(get_db)):
+    """Paginated - an unbounded `SELECT *` of every account ever registered
+    was fine to answer instantly when this project had a handful of test
+    users (see this whole session's history), but "return literally
+    everyone, no limit" is exactly the kind of thing that's cheap to write
+    and expensive to have shipped once an admin dashboard is actually used
+    against a real user base.
+    """
+    limit = max(1, min(limit, 500))
+    offset = max(0, offset)
+    total = db.query(func.count(models.User.id)).scalar()
+    users = (
+        db.query(models.User)
+        .order_by(models.User.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+    # One query for every user's hen count instead of one *per user*
+    # (accessing u.hens in the loop below used to lazy-load it individually
+    # each time - fine for a handful of test accounts, real N+1 the moment
+    # there's a real number of users).
+    hen_counts = dict(
+        db.query(models.Hen.user_id, func.count(models.Hen.id))
+        .filter(models.Hen.user_id.in_([u.id for u in users]))
+        .group_by(models.Hen.user_id)
+        .all()
+    ) if users else {}
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "users": [
+            {
+                "id": u.id,
+                "email": u.email,
+                "created_at": u.created_at,
+                "hen_count": hen_counts.get(u.id, 0),
+                "has_saved_payment_method": bool(u.stripe_customer_id),
+                "is_admin": u.is_admin,
+            }
+            for u in users
+        ],
+    }
 
 
 @router.get("/farms", response_model=list[schemas.FarmOut])
@@ -113,28 +162,41 @@ def update_farm(key: str, payload: schemas.FarmUpdate, db: Session = Depends(get
 # ---------------------------- other livestock (docs/LIVESTOCK.md) ----------------------------
 
 @router.post("/farms/{key}/animal-offerings", status_code=201)
-def add_animal_offering(key: str, species: str, product: str, weekly_capacity: int | None = None, db: Session = Depends(get_db)):
+def add_animal_offering(key: str, payload: schemas.AnimalOfferingCreate, db: Session = Depends(get_db)):
     """Lets a farm actually offer a species/product combo - see
     models.FarmAnimalOffering. Without this, POST /animals refuses every
     adoption for that farm with 404, on purpose (a farm doesn't make
-    goat milk just because the *species* exists in config.ANIMAL_PRODUCTS)."""
+    goat milk just because the *species* exists in config.ANIMAL_PRODUCTS).
+
+    A typed request body (schemas.AnimalOfferingCreate), not three loose
+    query parameters - every other write endpoint in this API takes a real
+    body; this one was the one exception, which meant no schema validation
+    (an empty species string reached this far before), no OpenAPI-documented
+    request shape, and awkward-to-construct calls from any real client.
+    """
     farm = db.query(models.Farm).filter(models.Farm.key == key).first()
     if farm is None:
         raise HTTPException(404, f"unknown farm key '{key}'")
-    valid = config.ANIMAL_PRODUCTS.get(species)
-    if valid is None or product not in valid:
-        raise HTTPException(400, f"'{species}' doesn't make '{product}' - see GET /animals/available-products")
+    valid = config.ANIMAL_PRODUCTS.get(payload.species)
+    if valid is None or payload.product not in valid:
+        raise HTTPException(400, f"'{payload.species}' doesn't make '{payload.product}' - see GET /animals/available-products")
     existing = (
         db.query(models.FarmAnimalOffering)
-        .filter(models.FarmAnimalOffering.farm_id == farm.id, models.FarmAnimalOffering.species == species, models.FarmAnimalOffering.product == product)
+        .filter(
+            models.FarmAnimalOffering.farm_id == farm.id,
+            models.FarmAnimalOffering.species == payload.species,
+            models.FarmAnimalOffering.product == payload.product,
+        )
         .first()
     )
     if existing is not None:
-        raise HTTPException(409, f"'{farm.name}' already offers {species}/{product}")
-    offering = models.FarmAnimalOffering(farm_id=farm.id, species=species, product=product, weekly_capacity=weekly_capacity)
+        raise HTTPException(409, f"'{farm.name}' already offers {payload.species}/{payload.product}")
+    offering = models.FarmAnimalOffering(
+        farm_id=farm.id, species=payload.species, product=payload.product, weekly_capacity=payload.weekly_capacity,
+    )
     db.add(offering)
     db.commit()
-    return {"farm_key": key, "species": species, "product": product, "weekly_capacity": weekly_capacity}
+    return {"farm_key": key, "species": payload.species, "product": payload.product, "weekly_capacity": payload.weekly_capacity}
 
 
 @router.post("/meat-shares", response_model=schemas.MeatShareOut, status_code=201)

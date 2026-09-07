@@ -24,6 +24,26 @@ Kód na to je už připravený — `app/database.py` čte `KVOC_DATABASE_URL`
 a chová se jinak jen podle toho, jestli adresa začíná na `sqlite` nebo ne.
 Změna databáze = změna jedné proměnné prostředí, žádný zásah do kódu.
 
+## Schéma databáze a migrace
+
+Appka při každém startu sama spustí skutečné, verzované DB migrace
+(Alembic, `migrations/`) — žádný ruční krok navíc, `python run.py`
+(nebo start kontejneru) to udělá samo. Nová verze kódu s novým sloupcem
+v modelu se na existující databázi (klidně s reálnými daty) aplikuje
+bezpečně, ne přepsáním nebo tichým selháním.
+
+Přidání nové migrace při vývoji (po změně `app/models.py`):
+
+```bash
+alembic revision --autogenerate -m "co se změnilo"
+```
+
+Zkontroluj vygenerovaný soubor v `migrations/versions/` (autogenerace je
+dobrý první návrh, ne vždycky přesně to, co chceš) a commitni ho spolu se
+změnou modelu — je to normální zdrojový soubor, ne generovaný artefakt.
+Appka ho při dalším startu sama použije; není potřeba nic spouštět ručně
+ani na produkčním serveru.
+
 ## Cesta A: Render (nejmíň kroků)
 
 1. Nahraj tenhle repozitář na GitHub (pokud tam ještě není).

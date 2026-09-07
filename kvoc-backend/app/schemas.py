@@ -1,13 +1,19 @@
 import datetime as dt
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from . import config
 
 
 class UserCreate(BaseModel):
-    email: str = Field(..., min_length=3, max_length=200)
+    # EmailStr (needs the pydantic[email]/email-validator extra - see
+    # requirements.txt) actually checks this looks like an email instead of
+    # accepting any 3-200 character string ("asdf" used to register just
+    # fine). Real deliverability isn't checked - it validates *format*, not
+    # that anything answers at that address - but garbage input is now
+    # rejected before the account row exists (see auth.py's endpoints).
+    email: EmailStr = Field(..., max_length=200)
     password: str = Field(..., min_length=8, max_length=200)
 
 
@@ -30,7 +36,7 @@ class ChangePasswordIn(BaseModel):
 
 
 class ForgotPasswordIn(BaseModel):
-    email: str = Field(..., min_length=3, max_length=200)
+    email: EmailStr = Field(..., max_length=200)
 
 
 class ResetPasswordIn(BaseModel):
@@ -238,6 +244,12 @@ class AnimalWalletOut(BaseModel):
     streak: int
 
 
+class AnimalOfferingCreate(BaseModel):
+    species: str = Field(..., min_length=1, max_length=20)
+    product: str = Field(..., min_length=1, max_length=20)
+    weekly_capacity: Optional[int] = Field(default=None, gt=0)
+
+
 class AvailableProductOut(BaseModel):
     """One row of config.ANIMAL_PRODUCTS, flattened for a client to render a
     species/product picker without hardcoding the registry itself."""
@@ -277,7 +289,12 @@ class MeatShareOut(BaseModel):
 
 
 class ShareContributeIn(BaseModel):
-    shares: int = Field(..., gt=0)
+    # le=100 matches MeatShareCreate.total_shares' own cap - contribute()
+    # in routers/meat_shares.py already refuses anything past what's
+    # actually left on the share, but rejecting an absurd number at the
+    # schema boundary is cheap and one less thing business logic has to
+    # reason about.
+    shares: int = Field(..., gt=0, le=100)
 
 
 class MarkShareReadyIn(BaseModel):

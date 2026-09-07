@@ -113,7 +113,14 @@ def require_admin(
     Neither is accepted if KVOC_ADMIN_TOKEN was never set AND no token was
     presented - admin endpoints are refused outright, not "open by default".
     """
-    if x_admin_token and config.ADMIN_TOKEN and x_admin_token == config.ADMIN_TOKEN:
+    # secrets.compare_digest, not ==: a plain string comparison returns as
+    # soon as it finds the first mismatched character, so how long it takes
+    # leaks how many leading characters an attacker's guess got right -
+    # compare_digest always takes the same time regardless. Doesn't matter
+    # over a single request, but a bearer token compared this way for the
+    # entire life of a deployment is exactly the kind of thing worth doing
+    # right from the start rather than "fix it if it's ever a problem".
+    if x_admin_token and config.ADMIN_TOKEN and secrets.compare_digest(x_admin_token, config.ADMIN_TOKEN):
         return
     if token:
         try:

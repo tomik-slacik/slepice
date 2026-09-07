@@ -9,10 +9,12 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.orm import Session
 
 # Windows terminals often default to a legacy codepage that mangles the
 # Czech diacritics in the demo notification text (e.g. "K�" instead of
@@ -26,8 +28,9 @@ for _stream in (sys.stdout, sys.stderr):
             pass
 
 from . import config, models  # noqa: F401  (models import registers them on Base before init_db)
-from .database import SessionLocal, init_db
+from .database import SessionLocal, get_db, init_db
 from .logging_setup import setup_logging
+from .middleware import RateLimitMiddleware, RequestLoggingMiddleware
 from .routers import admin, animals, auth, farms, hens, meat_shares, wallet
 from .scheduler import start_scheduler, stop_scheduler
 from .seed import seed_animal_offerings, seed_farms, seed_meat_shares
@@ -66,6 +69,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Middleware added below CORS, so it ends up *outside* it (Starlette builds
+# the stack in reverse add order - the last one added runs first on the way
+# in). Order that actually matters: a rate-limited request should never
+# even reach CORS/routing, and every request - limited or not - should get
+# logged with the same request id. See middleware.py for what each one does
+# and doesn't do.
+app.add_middleware(RateLimitMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 app.mount("/app", StaticFiles(directory=Path(__file__).parent / "webapp", html=True), name="webapp")
@@ -92,5 +103,21 @@ async def log_unhandled_exceptions(request: Request, exc: Exception):
 
 
 @app.get("/health", tags=["health"])
-def health():
-    return {"status": "ok"}
+def health(db: Session = Depends(get_db)):
+    """A health check that only ever says "ok" isn't really checking
+    anything - the process being up to answer HTTP at all was never in
+    doubt. This actually exercises the one dependency that can fail
+    independently of the process itself: the database. A load balancer or
+    orchestrator using this to decide whether to send traffic here (or
+    restart the container) gets a real answer, not a rubber stamp.
+    """
+    try:
+        db.execute(text("SELECT 1"))
+        db_ok = True
+    except Exception:
+        logger.exception("health check: database unreachable")
+        db_ok = False
+    return JSONResponse(
+        status_code=200 if db_ok else 503,
+        content={"status": "ok" if db_ok else "degraded", "database": "ok" if db_ok else "unreachable"},
+    )
