@@ -46,15 +46,30 @@ ani na produkčním serveru.
 
 ## Cesta A: Render (nejmíň kroků)
 
+**O peněz jde reálně u databáze, ne appky.** Bezplatná úroveň webové
+služby je skutečně trvalá (appka po 15 minutách bez provozu "usne" a
+další request ji o pár vteřin déle probudí — jinak zdarma napořád).
+Bezplatný Postgres je ale jen **30denní zkouška na účet, jednorázově** —
+účet, co ji už jednou využil (nebo mu vypršela), dostane při zakládání
+nové databáze rovnou nabídku placeného tarilu. `render.yaml` proto
+počítá s nejlevnějším placeným tarifem pro databázi
+(`0.1c-256mb`, řádově 6 $/měsíc při psaní tohohle dokumentu — ověř
+skutečnou cenu v Renderově rozhraní, než potvrdíš, ceny se mění).
+
 1. Nahraj tenhle repozitář na GitHub (pokud tam ještě není).
 2. Na [render.com](https://render.com) si založ účet a propoj ho
    s GitHubem.
-3. **New → Blueprint**, vyber tenhle repozitář. Render najde
+3. **New → Blueprint**, vyber tenhle repozitář (nebo rovnou
+   `https://dashboard.render.com/blueprint/new?repo=<adresa GitHub repa>`
+   — přeskočí ruční hledání repa). Render najde
    [`render.yaml`](../../render.yaml) v kořeni repozitáře a navrhne:
-   - webovou službu `kvoc-api` (postavenou z `kvoc-backend/Dockerfile`)
-   - databázi `kvoc-db` (Postgres, bezplatná úroveň)
-4. Potvrď. Render appku sestaví a spustí; `KVOC_JWT_SECRET` se vygeneruje
-   automaticky, `KVOC_DATABASE_URL` se propojí na databázi automaticky.
+   - webovou službu `kvoc-api` (postavenou z `kvoc-backend/Dockerfile`,
+     bezplatná úroveň)
+   - databázi `kvoc-db` (Postgres, placený tarif — viz výš)
+4. Potvrď (**Apply**) — tohle je krok, který stojí peníze (měsíční
+   předplatné databáze), zkontroluj cenu, než klikneš. `KVOC_JWT_SECRET`
+   se vygeneruje automaticky, `KVOC_DATABASE_URL` se propojí na databázi
+   automaticky.
 5. Až appka naběhne, dostaneš adresu typu `https://kvoc-api.onrender.com`.
    Appka na `/app/` a dokumentace na `/docs` fungují stejně jako lokálně.
 

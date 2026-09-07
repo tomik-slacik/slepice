@@ -7,6 +7,18 @@
 # here - the exact keys below are checked against Render's current
 # Blueprint spec (render.com/docs/blueprint-spec), but double-check your
 # dashboard if something doesn't match when you actually deploy.
+#
+# Costs real money, on purpose: Render's free Postgres is a one-time
+# 30-day trial per account, not a standing free tier (confirmed against
+# render.com/pricing) - an account that already used it once (or is
+# starting fresh after it lapsed) gets offered a paid plan instead, no
+# way around that from here. `0.1c-256mb` below is the cheapest paid
+# Postgres plan, ~$6/month at the time this was checked - verify the
+# actual price shown in Render's own UI before clicking Apply, prices
+# change. The web service itself (kvoc-api) stays on Render's free
+# compute plan - that one really is free, unlimited free trial, on top
+# of its own separate limitation (spins down after 15 minutes idle, cold
+# starts on the next request).
 services:
   - name: kvoc-api
     type: web
@@ -28,4 +40,4 @@ services:
 
 databases:
   - name: kvoc-db
-    plan: free
+    plan: 0.1c-256mb  # cheapest paid tier - see the cost note above
