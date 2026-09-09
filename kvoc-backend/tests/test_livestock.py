@@ -579,3 +579,242 @@ def test_animal_wallet_endpoints_are_isolated_between_users(client):
     assert r.status_code == 404
     r = client.get(f"/animals/{animal['id']}/wallet/topups", headers=headers_b)
     assert r.status_code == 404
+
+
+# ---------------------------- animal tick: full week -> delivery ----------------------------
+# Mirrors test_api.py's test_full_week_produces_a_delivery for the animal
+# side (app/tick.py's run_tick_for_animal) - the Friday-delivery and
+# next-day "marked delivered" branches there had never been exercised by
+# any animal test (only a single day's tick was ever checked).
+
+def test_animal_full_week_produces_a_delivery(client):
+    headers, _ = _new_user_headers(client)
+    animal = _adopt_animal(client, headers, species="cow", product="milk", farm_key="lipa", daily_amount=20)
+    animal_id = animal["id"]
+
+    # offsets 1..6 always reach the very next Friday regardless of which
+    # weekday "today" is when this test happens to run, same reasoning as
+    # the hen version of this test
+    for offset in range(1, 7):
+        r = client.post(f"/admin/run-tick?days_offset={offset}", headers=ADMIN_HEADERS)
+        assert r.status_code == 200
+
+    r = client.get(f"/animals/{animal_id}/deliveries", headers=headers)
+    assert r.status_code == 200
+    deliveries = r.json()
+    assert len(deliveries) == 1
+
+    d = deliveries[0]
+    assert d["amount"] > 0
+    assert d["units"] == round(d["amount"] / 22, 1)  # cow/milk kc_per_unit=22, see config.ANIMAL_PRODUCTS
+    assert d["status"] in ("transit", "delivered")
+
+
+def test_animal_not_found_returns_404(client):
+    headers, _ = _new_user_headers(client)
+    r = client.get("/animals/99999999", headers=headers)
+    assert r.status_code == 404
+
+
+def test_adopt_animal_rejects_a_completely_unknown_farm_key(client):
+    # distinct from test_adopt_animal_rejects_a_farm_that_doesnt_offer_it,
+    # which uses a real farm that just doesn't offer that species/product -
+    # this is a farm_key that isn't a Farm row at all
+    headers, _ = _new_user_headers(client)
+    r = client.post("/animals", json={"species": "cow", "product": "milk", "farm_key": "no-such-farm"}, headers=headers)
+    assert r.status_code == 404
+
+
+# ---------------------------- 404s that had never actually been triggered ----------------------------
+
+def test_meat_share_not_found_returns_404(client):
+    headers, _ = _new_user_headers(client)
+    _give_saved_card(client, headers)
+
+    r = client.get("/meat-shares/99999999", headers=headers)
+    assert r.status_code == 404
+    r = client.post("/meat-shares/99999999/contribute", json={"shares": 1}, headers=headers)
+    assert r.status_code == 404
+    r = client.delete("/meat-shares/99999999/contribution", headers=headers)
+    assert r.status_code == 404
+
+
+def test_admin_farm_and_meat_share_endpoints_reject_unknown_farm_keys(client):
+    r = client.patch("/admin/farms/no-such-farm", json={"name": "X"}, headers=ADMIN_HEADERS)
+    assert r.status_code == 404
+    r = client.post(
+        "/admin/meat-shares",
+        json={"farm_key": "no-such-farm", "species": "cow", "label": "X", "total_shares": 1, "price_per_share_czk": 1},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 404
+    r = client.post("/admin/meat-shares/99999999/mark-ready", json={"total_yield_kg": 1}, headers=ADMIN_HEADERS)
+    assert r.status_code == 404
+
+
+def test_delivery_route_for_a_farm_with_no_saved_location(client):
+    # GET /admin/farms/{key}/delivery-route's other branch (see admin.py) -
+    # every route test so far used "lipa"/"dvur", both seeded with real
+    # lat/lng (app/seed.py) - a farm with none must fail honestly (a clear
+    # note, everyone dumped into `unlocated`) instead of pretending an order
+    r = client.post(
+        "/admin/farms",
+        json={"key": "no-location-farm", "name": "Bez Polohy", "description": ""},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 201, r.text
+
+    headers, _ = _new_user_headers(client)
+    hen = client.post("/hens", json={"hen_name": "X", "farm_key": "no-location-farm", "lat": 50.0, "lng": 14.0}, headers=headers).json()
+
+    r = client.get("/admin/farms/no-location-farm/delivery-route", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["route"] == []
+    assert body["total_km"] is None
+    assert body["note"]
+    assert hen["id"] in [u["id"] for u in body["unlocated"]]
+
+
+# ---------------------------- last few branches coverage turned up ----------------------------
+
+def test_create_meat_share_rejects_an_invalid_species(client):
+    r = client.post(
+        "/admin/meat-shares",
+        json={"farm_key": "dvur", "species": "chicken", "label": "X", "total_shares": 1, "price_per_share_czk": 1},
+        headers=ADMIN_HEADERS,
+    )
+    assert r.status_code == 400
+
+
+def test_mark_meat_share_ready_rejects_a_share_already_marked_ready(client):
+    r = client.post(
+        "/admin/meat-shares",
+        json={"farm_key": "dvur", "species": "goat", "label": "Dvakrat Pripravena Koza", "total_shares": 1, "price_per_share_czk": 100},
+        headers=ADMIN_HEADERS,
+    )
+    share_id = r.json()["id"]
+    r = client.post(f"/admin/meat-shares/{share_id}/mark-ready", json={"total_yield_kg": 10}, headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+
+    r = client.post(f"/admin/meat-shares/{share_id}/mark-ready", json={"total_yield_kg": 12}, headers=ADMIN_HEADERS)
+    assert r.status_code == 409
+
+
+def test_contribute_to_share_payment_failure_applies_nothing(client):
+    from unittest.mock import patch
+
+    from app.integrations.payments import TopUpResult
+
+    r = client.post(
+        "/admin/meat-shares",
+        json={"farm_key": "dvur", "species": "cow", "label": "Platba Selze Krava", "total_shares": 4, "price_per_share_czk": 500},
+        headers=ADMIN_HEADERS,
+    )
+    share_id = r.json()["id"]
+
+    headers, _ = _new_user_headers(client)
+    _give_saved_card(client, headers)
+
+    with patch(
+        "app.integrations.payments.MockPaymentProvider.charge_saved_method",
+        return_value=TopUpResult(success=False, provider_reference="mock-fail", message="card declined"),
+    ):
+        r = client.post(f"/meat-shares/{share_id}/contribute", json={"shares": 1}, headers=headers)
+    assert r.status_code == 402
+
+    # nothing partially applied - the share is still exactly as empty as before
+    r = client.get(f"/meat-shares/{share_id}", headers=headers)
+    assert r.json()["shares_taken"] == 0
+    assert r.json()["my_shares"] == 0
+
+
+def test_cancel_contribution_refund_failure_leaves_the_contribution_intact(client):
+    from unittest.mock import patch
+
+    from app.integrations.payments import RefundResult
+
+    r = client.post(
+        "/admin/meat-shares",
+        json={"farm_key": "dvur", "species": "sheep", "label": "Refund Selze Ovce", "total_shares": 2, "price_per_share_czk": 200},
+        headers=ADMIN_HEADERS,
+    )
+    share_id = r.json()["id"]
+
+    headers, _ = _new_user_headers(client)
+    _give_saved_card(client, headers)
+    client.post(f"/meat-shares/{share_id}/contribute", json={"shares": 1}, headers=headers)
+
+    with patch(
+        "app.integrations.payments.MockPaymentProvider.refund_charge",
+        return_value=RefundResult(success=False, provider_reference="", message="refund window closed"),
+    ):
+        r = client.delete(f"/meat-shares/{share_id}/contribution", headers=headers)
+    assert r.status_code == 402
+
+    # the refund failing must not have deleted the contribution anyway
+    r = client.get(f"/meat-shares/{share_id}", headers=headers)
+    assert r.json()["my_shares"] == 1
+
+
+def test_animal_wallet_reflects_real_today_before_any_tick_was_advanced(client):
+    # effective_today_for_animal()'s plain "nothing ticked into the future
+    # yet" branch - every other animal-wallet test in this file first
+    # advances days_offset, which always lands on the *other* branch
+    headers, _ = _new_user_headers(client)
+    animal = _adopt_animal(client, headers)
+    r = client.get(f"/animals/{animal['id']}/wallet", headers=headers)
+    assert r.status_code == 200
+    assert r.json()["daily_amount"] == animal["daily_amount"]
+
+
+def test_animal_streak_survives_a_pause_in_the_middle(client):
+    # animal-side twin of test_api.py's test_streak_survives_a_pause_in_the_middle -
+    # compute_animal_streak has the identical "paused day freezes it, never
+    # breaks it" branch, never exercised for animals
+    from app import models, tick
+    from app.database import SessionLocal
+
+    headers, _ = _new_user_headers(client)
+    animal_id = _adopt_animal(client, headers)["id"]
+    monday, tuesday, wednesday = dt.date(2026, 1, 5), dt.date(2026, 1, 6), dt.date(2026, 1, 7)
+
+    db = SessionLocal()
+    try:
+        animal = db.get(models.Animal, animal_id)
+        tick.run_tick_for_animal(db, animal, monday)  # fed
+        animal.paused = True
+        db.commit()
+        tick.run_tick_for_animal(db, animal, tuesday)  # paused - frozen, not a gap
+        animal.paused = False
+        db.commit()
+        tick.run_tick_for_animal(db, animal, wednesday)  # fed again
+        streak = tick.compute_animal_streak(db, animal, today=wednesday)
+    finally:
+        db.close()
+
+    assert streak == 2  # Wednesday + Monday, Tuesday frozen not counted
+
+
+def test_animal_streak_computed_for_today_before_todays_tick_has_run(client):
+    # animal-side twin of test_api.py's
+    # test_streak_computed_for_today_before_todays_tick_has_run - a fresh
+    # animal, so Tuesday genuinely has neither a product-log entry nor a
+    # paused-day row when it's checked as `today`
+    from app import models, tick
+    from app.database import SessionLocal
+
+    headers, _ = _new_user_headers(client)
+    animal_id = _adopt_animal(client, headers)["id"]
+    monday, tuesday = dt.date(2026, 1, 5), dt.date(2026, 1, 6)
+
+    db = SessionLocal()
+    try:
+        animal = db.get(models.Animal, animal_id)
+        tick.run_tick_for_animal(db, animal, monday)  # fed
+        # Tuesday deliberately never ticked - simulates "today, not yet ticked"
+        streak = tick.compute_animal_streak(db, animal, today=tuesday)
+    finally:
+        db.close()
+
+    assert streak == 1  # Monday counts; Tuesday (== today) doesn't break it just for not having happened yet

@@ -438,6 +438,63 @@ def test_wallet_reflects_demo_advanced_days_not_just_real_today(client):
         assert after['streak'] > before['streak']
 
 
+def test_streak_survives_a_pause_in_the_middle(client):
+    # compute_streak()'s own docstring: "a paused day freezes the streak -
+    # neither adds to it nor breaks it" - never actually exercised by a
+    # test before. Calls tick.run_tick_for_hen/compute_streak directly with
+    # fixed dates (a real Mon/Tue/Wed) rather than through
+    # POST /admin/run-tick's weekday-relative days_offset, which the
+    # existing test_wallet_reflects_demo_advanced_days_not_just_real_today
+    # already notes can land on a weekend and go untested depending on
+    # which real day this test suite happens to run on.
+    from app import models, tick
+    from app.database import SessionLocal
+
+    headers, _ = _new_user_headers(client)
+    hen_id = _adopt_hen(client, headers)["id"]
+    monday, tuesday, wednesday = dt.date(2026, 1, 5), dt.date(2026, 1, 6), dt.date(2026, 1, 7)
+
+    db = SessionLocal()
+    try:
+        hen = db.get(models.Hen, hen_id)
+        tick.run_tick_for_hen(db, hen, monday)  # fed
+        hen.paused = True
+        db.commit()
+        tick.run_tick_for_hen(db, hen, tuesday)  # paused - frozen, not a gap
+        hen.paused = False
+        db.commit()
+        tick.run_tick_for_hen(db, hen, wednesday)  # fed again
+        streak = tick.compute_streak(db, hen, today=wednesday)
+    finally:
+        db.close()
+
+    assert streak == 2  # Wednesday + Monday - Tuesday frozen, not counted and not breaking it
+
+
+def test_streak_computed_for_today_before_todays_tick_has_run(client):
+    # effective_today_for_hen() can hand compute_streak() a `today` that
+    # hasn't been ticked yet (in production: any time between midnight and
+    # whenever the daily scheduler actually fires) - the "hasn't happened
+    # yet" day must not look like a broken streak
+    from app import models, tick
+    from app.database import SessionLocal
+
+    headers, _ = _new_user_headers(client)
+    hen_id = _adopt_hen(client, headers)["id"]
+    monday, tuesday = dt.date(2026, 1, 5), dt.date(2026, 1, 6)
+
+    db = SessionLocal()
+    try:
+        hen = db.get(models.Hen, hen_id)
+        tick.run_tick_for_hen(db, hen, monday)  # fed
+        # deliberately never tick `tuesday` - simulates "today, not yet ticked"
+        streak = tick.compute_streak(db, hen, today=tuesday)
+    finally:
+        db.close()
+
+    assert streak == 1  # Monday counts; Tuesday (== today) doesn't break it just for not having happened yet
+
+
 def test_settings_update(client):
     headers, _ = _new_user_headers(client)
     hen = _adopt_hen(client, headers, farm_key="polana")
@@ -663,6 +720,14 @@ def test_admin_access_also_works_via_an_is_admin_account_not_just_the_shared_tok
 
     r = client.get("/admin/stats", headers=headers)
     assert r.status_code == 200  # same bearer token, now works - no re-login needed
+
+
+def test_admin_endpoints_refuse_a_garbage_bearer_token_cleanly(client):
+    # require_admin's other own except-branch (auth.py) - a garbage/expired
+    # bearer token on the is_admin path must fall through to the ordinary
+    # "not an admin" 403, not surface _decode_token's own 401 unhandled
+    r = client.get("/admin/stats", headers={"Authorization": "Bearer not-a-real-jwt-at-all"})
+    assert r.status_code == 403
 
 
 def test_admin_endpoints_refuse_wrong_token(client):
