@@ -8,7 +8,7 @@ umí fungovat bez backendu) teď existuje i **[`app/webapp/`](app/webapp/)**
 data, reálné platby). Otevři `http://127.0.0.1:8000/app/` po spuštění
 backendu níž.
 
-**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 82 testů
+**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 87 testů
 (`pytest`) a k tomu appka `app/webapp/` doopravdy proklikaná v prohlížeči
 (registrace, adopce, všechny záložky, pauza, mock platba, posun dne).
 Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
@@ -54,7 +54,7 @@ Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
   limit (vypnutý ve výchozím stavu, `KVOC_RATE_LIMIT_PER_MINUTE`).
 - **Skutečná validace e-mailu** při registraci (`pydantic[email]`) —
   dřív appka klidně založila účet na "asdf".
-- **Testy**, které se dají spustit, ne jen přečíst (82 testů: API, auth,
+- **Testy**, které se dají spustit, ne jen přečíst (87 testů: API, auth,
   platby, livestock)
 - **`app/webapp/`** — appka opravdu napojená na tohle API (viz výš)
 
@@ -145,6 +145,7 @@ app/
   tick.py                        — denní byznys logika (krmení, bonus, páteční svoz, série)
   scheduler.py                    — napojení tick.py na skutečný denní cron
   config.py                         — ceny, časy, limity, JWT a platební nastavení na jednom místě
+  geo.py                              — jediný vzorec (haversine_km) pro vzdálenost dvou bodů, sdílený mezi GET /farms a GET /admin/farms/{key}/delivery-route
   integrations/
     payments.py                        — MockPaymentProvider + funkční StripePaymentProvider
     notifications.py                    — ConsoleNotificationProvider + kam zapojit FCM/APNs

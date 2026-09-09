@@ -19,6 +19,19 @@ je o tom druhém.
   (`409`), a v seznamu farem ukazuje `spots_left`. Bez tohohle by appka
   klidně nechala tisíc lidí vybrat si stejnou malou farmu s deseti
   slepicemi — model, co by v realitě okamžitě spadl.
+- **Rozvozová trasa** (`GET /admin/farms/{key}/delivery-route`, viz
+  `docs/ADMIN.md`) — seřadí všechna aktivní páteční doručení jedné farmy
+  do jedné trasy (hladový algoritmus "nejbližší další" od polohy farmy),
+  místo náhodného pořadí zastávek. Postavené na `Hen.lat`/`lng` a
+  `Animal.lat`/`lng`, ne na geokódování textové adresy (`Hen.address`
+  zůstává jen čitelný popisek pro člověka) — appka totiž o polohu zařízení
+  žádá stejně jako při hledání farmy (`requestLocation()` v
+  `app/webapp/index.html`), takže souřadnice jde jen tiše přibalit k
+  adopci, aniž by appka musela žádat o cokoliv navíc. Volitelné všude —
+  slepička/zvíře bez uložené polohy jde adoptovat úplně normálně, jen se
+  v trase objeví zvlášť jako "bez uložené polohy" místo aby zmizelo.
+  Vzdálenost je "vzdušnou čarou" (Haversine), ne skutečná trasa po
+  silnicích — žádné napojení na routovací službu tu není a nebylo cílem.
 
 ## Co appka nevyřeší, protože to není softwarový problém
 
@@ -40,12 +53,9 @@ vylučující:
    (CSA). Dobrá první volba pro pilot, než appka škáluje.
 
 **Kde appka může pomoct, i když trasu nejede:** protože *všechna*
-doručení jednoho farmáře padnou na stejný den (pátek), jde z adres
+doručení jednoho farmáře padnou na stejný den (pátek), jde ze souřadnic
 zákazníků v okruhu farmy sestavit **jedna rozvozová trasa místo
-náhodných zastávek**. To by byla další reálná funkce (seřadit páteční
-doručení dané farmy podle adresy/vzdálenosti do jedné trasy) — zatím
-nepostavená, ale navazuje přímo na `Hen.address` + farm `lat`/`lng`, co
-už appka má.
+náhodných zastávek** — viz "Rozvozová trasa" výš, teď už hotové.
 
 ## Co appka nevyřeší, protože to je právní/byznysová otázka
 

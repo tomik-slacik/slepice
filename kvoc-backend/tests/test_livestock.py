@@ -385,3 +385,44 @@ def test_add_animal_offering_requires_admin(client):
         json={"species": "goat", "product": "milk"},
     )
     assert r.status_code == 403
+
+
+# ---------------------------- admin: delivery route ----------------------------
+# GET /admin/farms/{key}/delivery-route (docs/LOGISTICS.md) - the hen-only
+# case is covered in test_api.py; this proves a hen and an animal on the
+# same farm both show up as stops on the same route, correctly ordered
+# against each other by real distance, not just within their own kind.
+
+def test_delivery_route_mixes_hens_and_animals_on_one_farm(client):
+    headers_hen, _ = _new_user_headers(client)
+    headers_goat, _ = _new_user_headers(client)
+
+    # "dvur" is seeded at lat 49.7847, lng 14.6873 (app/seed.py) - the goat
+    # is placed closer than the hen on purpose, so a correct mixed route
+    # must visit the goat first regardless of which kind it is
+    r = client.post(
+        "/hens",
+        json={"hen_name": "Vzdálená Slepička", "farm_key": "dvur", "lat": 49.83, "lng": 14.73},
+        headers=headers_hen,
+    )
+    assert r.status_code == 201, r.text
+    hen = r.json()
+
+    r = client.post(
+        "/animals",
+        json={"species": "goat", "product": "milk", "farm_key": "dvur", "lat": 49.786, "lng": 14.690},
+        headers=headers_goat,
+    )
+    assert r.status_code == 201, r.text
+    goat = r.json()  # no `name` given - the route should fall back to a species label
+
+    r = client.get("/admin/farms/dvur/delivery-route", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    stops = r.json()["route"]
+    kinds_and_ids = [(s["kind"], s["id"]) for s in stops]
+    assert ("hen", hen["id"]) in kinds_and_ids
+    assert ("animal", goat["id"]) in kinds_and_ids
+    assert kinds_and_ids.index(("animal", goat["id"])) < kinds_and_ids.index(("hen", hen["id"]))
+
+    goat_stop = [s for s in stops if s["kind"] == "animal" and s["id"] == goat["id"]][0]
+    assert goat_stop["name"] == "Koza"  # no custom name given above - species label fallback

@@ -93,6 +93,8 @@ def adopt_animal(
         farm_id=farm.id,
         daily_amount=payload.daily_amount,
         address=payload.address,
+        lat=payload.lat,
+        lng=payload.lng,
     )
     db.add(animal)
     db.commit()

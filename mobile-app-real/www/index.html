@@ -329,6 +329,10 @@
   // farm-finder (onboarding step 1) - transient, re-asked fresh each time
   var geoStatus = 'idle';   // idle | asking | granted | denied | unsupported
   var farmRadius = 'all';   // 'all' | 10 | 25 | 50 (km) - filtered client-side once farms[] has distance_km
+  // Last coordinate captureDeviceLocation() got, if any - lives only for
+  // this page load (not persisted), reused opportunistically by whichever
+  // of onb-finish/adopt-animal-submit fires next. See captureDeviceLocation().
+  var myGeo = {lat: null, lng: null};
 
   function loadToken(){ try{ return localStorage.getItem(TOKEN_KEY); }catch(e){ return null; } }
   function saveToken(t){ try{ if(t){ localStorage.setItem(TOKEN_KEY, t); } else { localStorage.removeItem(TOKEN_KEY); } }catch(e){} }
@@ -567,36 +571,50 @@
   // Same idea as the offline demo's requestLocation(), but the distance math
   // happens server-side (GET /farms?lat=&lng=) since farms are real server
   // data here, not a hardcoded client array - one source of truth for it.
-  function requestLocation(){
-    geoStatus = 'asking';
-    renderOnboarding();
+  // Kept separate from requestLocation() below (which additionally
+  // re-fetches farm distances for the onboarding picker) so anything else
+  // that just wants the device's coordinates - e.g. the add-animal form's
+  // "use my location" button - can grab them without redoing that fetch.
+  // Always resolves with {lat,lng} and, as a side effect, remembers it in
+  // myGeo so a later /hens or /animals POST can send it along (see
+  // models.Hen.lat's comment in the backend for why: it's what
+  // GET /admin/farms/{key}/delivery-route sorts stops by).
+  function captureDeviceLocation(){
     var GeoPlugin = (window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform() && Capacitor.Plugins)
       ? Capacitor.Plugins.Geolocation : null;
-
-    function onOk(lat, lng){
-      api('/farms?lat='+encodeURIComponent(lat)+'&lng='+encodeURIComponent(lng)).then(function(f){
-        farms = f;
-        geoStatus = 'granted';
-        renderOnboarding();
-      }).catch(function(){ geoStatus = 'denied'; renderOnboarding(); });
-    }
-    function onErr(){ geoStatus = 'denied'; renderOnboarding(); }
-
+    var raw;
     if (GeoPlugin) {
-      GeoPlugin.checkPermissions().then(function(perm){
+      raw = GeoPlugin.checkPermissions().then(function(perm){
         var already = perm && (perm.location === 'granted' || perm.coarseLocation === 'granted');
         return already ? Promise.resolve() : GeoPlugin.requestPermissions();
       }).then(function(){
         return GeoPlugin.getCurrentPosition({enableHighAccuracy:false, timeout:10000});
-      }).then(function(pos){ onOk(pos.coords.latitude, pos.coords.longitude); }).catch(onErr);
+      }).then(function(pos){ return {lat: pos.coords.latitude, lng: pos.coords.longitude}; });
     } else if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(function(pos){
-        onOk(pos.coords.latitude, pos.coords.longitude);
-      }, onErr, {enableHighAccuracy:false, timeout:10000});
+      raw = new Promise(function(resolve, reject){
+        navigator.geolocation.getCurrentPosition(function(pos){
+          resolve({lat: pos.coords.latitude, lng: pos.coords.longitude});
+        }, reject, {enableHighAccuracy:false, timeout:10000});
+      });
     } else {
-      geoStatus = 'unsupported';
-      renderOnboarding();
+      raw = Promise.reject(new Error('geolocation unsupported'));
     }
+    return raw.then(function(coords){ myGeo = coords; return coords; });
+  }
+
+  function requestLocation(){
+    geoStatus = 'asking';
+    renderOnboarding();
+    captureDeviceLocation().then(function(coords){
+      return api('/farms?lat='+encodeURIComponent(coords.lat)+'&lng='+encodeURIComponent(coords.lng));
+    }).then(function(f){
+      farms = f;
+      geoStatus = 'granted';
+      renderOnboarding();
+    }).catch(function(err){
+      geoStatus = (err && err.message === 'geolocation unsupported') ? 'unsupported' : 'denied';
+      renderOnboarding();
+    });
   }
   function farmsForPicker(){
     if (farmRadius==='all' || geoStatus!=='granted') return farms;
@@ -1159,6 +1177,9 @@
         '<div style="display:flex;flex-direction:column;gap:8px;">'+farmCards+'</div>'+
         '<div class="field-label" style="margin-top:14px;">Jméno (nepovinné)</div>'+
         '<input class="text-input" id="add-animal-name" value="'+escapeHtml(addAnimalDraft.name)+'">'+
+        (myGeo.lat!=null
+          ? '<div class="hint mono" style="margin-top:8px;color:var(--accent-text);">📍 Poloha uložena pro rozvozovou trasu</div>'
+          : '<div class="pressable" data-action="add-animal-use-location" style="margin-top:8px;"><div class="btn-secondary" style="font-size:12px;padding:8px;">📍 Přidat polohu pro rozvozovou trasu</div></div>')+
         '<div class="stepper-row" style="margin-top:12px;">'+
           '<div class="round-btn pressable" data-action="add-animal-amount-minus">'+ICO.minus+'</div>'+
           '<div class="stepper-num">'+addAnimalDraft.dailyAmount+' Kč</div>'+
@@ -1498,7 +1519,12 @@
       var addrEl = document.getElementById('ob-address');
       if(addrEl) draft.address = addrEl.value.trim();
       if(!draft.farmKey){ return; }
-      api('/hens', {method:'POST', body: JSON.stringify({hen_name:draft.henName, farm_key:draft.farmKey, daily_amount:draft.dailyAmount, address:draft.address})})
+      var henBody = {hen_name:draft.henName, farm_key:draft.farmKey, daily_amount:draft.dailyAmount, address:draft.address};
+      // whatever requestLocation() already captured while picking a farm
+      // above - not a fresh ask, and never lets a hen without it block
+      // adoption (see models.Hen.lat's comment: it's optional everywhere)
+      if(myGeo.lat!=null && myGeo.lng!=null){ henBody.lat = myGeo.lat; henBody.lng = myGeo.lng; }
+      api('/hens', {method:'POST', body: JSON.stringify(henBody)})
         .then(function(h){ hen = h; selDay=null; return loadHenData(); })
         .then(function(){ inferDemoOffset(); renderMain(); })
         .catch(toastError);
@@ -1548,14 +1574,24 @@
     else if(action==='pick-animal-farm'){ addAnimalDraft.farmKey = el.getAttribute('data-farm'); renderMain(); }
     else if(action==='add-animal-amount-minus'){ addAnimalDraft.dailyAmount = Math.max(10, addAnimalDraft.dailyAmount-5); renderMain(); }
     else if(action==='add-animal-amount-plus'){ addAnimalDraft.dailyAmount = Math.min(40, addAnimalDraft.dailyAmount+5); renderMain(); }
+    else if(action==='add-animal-use-location'){
+      captureDeviceLocation().then(function(){
+        showToasts([{tag:'POLOHA', body:'Uloženo - použije se pro rozvozovou trasu.'}]);
+        renderMain();
+      }).catch(function(){
+        showToasts([{tag:'CHYBA', body:'Polohu se nepodařilo zjistit.', err:true}]);
+      });
+    }
     else if(action==='adopt-animal-submit'){
       var nameEl = document.getElementById('add-animal-name');
       if(nameEl) addAnimalDraft.name = nameEl.value.trim();
       if(!addAnimalDraft.species || !addAnimalDraft.farmKey){ showToasts([{tag:'CHYBA', body:'Vyber druh i farmu.', err:true}]); return; }
-      api('/animals', {method:'POST', body: JSON.stringify({
+      var animalBody = {
         species: addAnimalDraft.species, product: addAnimalDraft.product, name: addAnimalDraft.name,
         farm_key: addAnimalDraft.farmKey, daily_amount: addAnimalDraft.dailyAmount,
-      })}).then(function(newAnimal){
+      };
+      if(myGeo.lat!=null && myGeo.lng!=null){ animalBody.lat = myGeo.lat; animalBody.lng = myGeo.lng; }
+      api('/animals', {method:'POST', body: JSON.stringify(animalBody)}).then(function(newAnimal){
         animals.push(newAnimal);
         addAnimalOpen = false;
         animalActivityLoaded = false; // re-fetch so Aktivita picks up the new animal too

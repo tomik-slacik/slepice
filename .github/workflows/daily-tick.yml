@@ -1,0 +1,49 @@
+name: Daily tick (keeps a sleeping backend's daily job running)
+
+# Render's free web-service tier spins the backend down after 15 minutes
+# idle (see kvoc-backend/docs/DEPLOYMENT.md) - the app's own scheduler
+# (kvoc-backend/app/scheduler.py) only fires the daily tick if the process
+# happens to be awake at DAILY_TICK_HOUR (08:00 Europe/Prague, see
+# kvoc-backend/app/config.py), so a sleeping backend can simply miss its
+# own scheduled tick. This workflow pings POST /admin/run-tick from
+# outside instead, which both wakes the backend up (any HTTP request does)
+# and, once awake, runs the tick directly - whether or not the internal
+# scheduler also managed to fire that day.
+#
+# Safe to run more than once a day: run_tick_for_hen/run_tick_for_animal
+# (kvoc-backend/app/tick.py) are explicitly idempotent per calendar day
+# ("calling this again for a day already processed is a safe no-op"), so a
+# redundant call here - or one that overlaps the internal scheduler - is a
+# real no-op, never a double charge or a doubled notification. That's why
+# this schedules two pings, not one: a single failed request (a transient
+# network blip, a slow cold start past curl's timeout) still gets a
+# same-day retry a few hours later instead of silently doing nothing until
+# tomorrow.
+#
+# Needs two repository secrets, set in GitHub's own UI (this repo's
+# Settings -> Secrets and variables -> Actions) - this file alone does
+# nothing without them, and setting them is on you, same as everything
+# else that needs your own accounts/credentials (see
+# kvoc-backend/docs/DEPLOYMENT.md):
+#   KVOC_API_URL      e.g. https://kvoc-api.onrender.com (no trailing slash)
+#   KVOC_ADMIN_TOKEN  the same value as the backend's KVOC_ADMIN_TOKEN env var
+on:
+  schedule:
+    - cron: "15 7 * * *"   # ~08:15 CET / ~09:15 CEST - GitHub cron is UTC-only, doesn't shift for DST
+    - cron: "0 12 * * *"   # same-day retry if the morning ping failed
+  workflow_dispatch: {}    # "Run workflow" button in the Actions tab, for trying this without waiting on the schedule
+
+jobs:
+  run-tick:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /admin/run-tick
+        run: |
+          if [ -z "${{ secrets.KVOC_API_URL }}" ] || [ -z "${{ secrets.KVOC_ADMIN_TOKEN }}" ]; then
+            echo "::error::KVOC_API_URL and/or KVOC_ADMIN_TOKEN repository secrets are not set - see this file's header comment for what to add and where."
+            exit 1
+          fi
+          curl --fail --show-error --silent \
+            --max-time 60 \
+            -X POST "${{ secrets.KVOC_API_URL }}/admin/run-tick" \
+            -H "X-Admin-Token: ${{ secrets.KVOC_ADMIN_TOKEN }}"

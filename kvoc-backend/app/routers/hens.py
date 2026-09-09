@@ -40,6 +40,8 @@ def adopt_hen(
         farm_id=farm.id,
         daily_amount=payload.daily_amount,
         address=payload.address,
+        lat=payload.lat,
+        lng=payload.lng,
     )
     db.add(hen)
     db.commit()

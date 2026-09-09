@@ -38,6 +38,23 @@
   .hidden{display:none;}
   .pill{display:inline-block;font-family:'IBM Plex Mono',monospace;font-size:9.5px;padding:2px 7px;border-radius:20px;background:var(--surface-2);border:1px solid var(--line);color:var(--ink-soft);}
   .pill.full{background:var(--err);color:#fff;border-color:var(--err);}
+  .pill.warn{background:var(--accent);color:#fff;border-color:var(--accent);}
+  button.small{padding:5px 9px;font-size:11.5px;box-shadow:none;}
+  button.danger{background:var(--err);}
+  td.actions{white-space:nowrap;}
+  td.actions button{margin-right:5px;}
+  .trend{display:flex;align-items:flex-end;gap:3px;height:70px;margin-top:6px;}
+  .trend .bar{flex:1;background:var(--accent);border-radius:2px 2px 0 0;min-height:2px;position:relative;}
+  .trend .bar:hover::after{
+    content:attr(data-tip);position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
+    background:var(--ink);color:var(--surface);font-family:'IBM Plex Mono',monospace;font-size:10px;
+    padding:3px 6px;border-radius:3px;white-space:nowrap;margin-bottom:4px;pointer-events:none;
+  }
+  .trend-labels{display:flex;justify-content:space-between;font-family:'IBM Plex Mono',monospace;font-size:9.5px;color:var(--ink-soft);margin-top:4px;}
+  .detail-box{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);}
+  .detail-box .sub-h{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);margin:10px 0 4px;}
+  .route-stop{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
+  .route-stop:last-child{border-bottom:none;}
 </style>
 </head>
 <body>
@@ -57,11 +74,15 @@
     <div class="card">
       <h2>Přehled</h2>
       <div class="stat-grid" id="stats"></div>
+      <div class="sub" style="margin:14px 0 0;">Trend, posledních 14 dní</div>
+      <div class="trend" id="trend-chart"></div>
+      <div class="trend-labels" id="trend-labels"></div>
     </div>
 
     <div class="card">
       <h2>Farmy</h2>
-      <table id="farms-table"><thead><tr><th>Farma</th><th>Klíč</th><th>Kapacita</th><th>Volno</th></tr></thead><tbody></tbody></table>
+      <table id="farms-table"><thead><tr><th>Farma</th><th>Klíč</th><th>Kapacita</th><th>Volno</th><th></th></tr></thead><tbody></tbody></table>
+      <div class="detail-box hidden" id="route-detail"></div>
       <h2 style="margin-top:18px;">Přidat farmu</h2>
       <div class="row">
         <div><label>Klíč</label><input type="text" id="f-key" placeholder="napr-farma-x"></div>
@@ -79,8 +100,9 @@
 
     <div class="card">
       <h2>Uživatelé <span id="users-count" class="mono" style="font-weight:400;font-size:13px;"></span></h2>
-      <table id="users-table"><thead><tr><th>E-mail</th><th>Slepičky</th><th>Karta</th><th>Založeno</th></tr></thead><tbody></tbody></table>
+      <table id="users-table"><thead><tr><th>E-mail</th><th>Slepičky</th><th>Karta</th><th>Založeno</th><th></th></tr></thead><tbody></tbody></table>
       <div class="mono" style="margin-top:8px;font-size:12px;color:#666;">Prvních 100 (nejnovější) - <code>GET /admin/users?offset=100</code> pro další.</div>
+      <div class="detail-box hidden" id="user-detail"></div>
     </div>
   </div>
 </div>
@@ -129,7 +151,8 @@
     document.querySelector('#farms-table tbody').innerHTML = farms.map(function(f){
       var full = f.spots_left!=null && f.spots_left<=0;
       var spots = f.spots_left==null ? '—' : '<span class="pill'+(full?' full':'')+'">'+f.spots_left+'</span>';
-      return '<tr><td>'+f.name+'</td><td class="mono">'+f.key+'</td><td>'+(f.weekly_capacity==null?'—':f.weekly_capacity)+'</td><td>'+spots+'</td></tr>';
+      return '<tr><td>'+f.name+'</td><td class="mono">'+f.key+'</td><td>'+(f.weekly_capacity==null?'—':f.weekly_capacity)+'</td><td>'+spots+'</td>'+
+        '<td class="actions"><button class="small secondary" onclick="showRoute(\''+f.key+'\')">Trasa</button></td></tr>';
     }).join('');
   }
 
@@ -138,8 +161,110 @@
     // (paginated - see admin.py), not a bare array
     document.getElementById('users-count').textContent = '('+page.users.length+' z '+page.total+')';
     document.querySelector('#users-table tbody').innerHTML = page.users.map(function(u){
-      return '<tr><td>'+u.email+'</td><td>'+u.hen_count+'</td><td>'+(u.has_saved_payment_method?'ano':'ne')+'</td><td class="mono">'+(u.created_at||'').slice(0,10)+'</td></tr>';
+      return '<tr><td>'+u.email+'</td><td>'+u.hen_count+'</td><td>'+(u.has_saved_payment_method?'ano':'ne')+'</td><td class="mono">'+(u.created_at||'').slice(0,10)+'</td>'+
+        '<td class="actions"><button class="small secondary" onclick="showUserDetail('+u.id+')">Detail</button></td></tr>';
     }).join('');
+  }
+
+  function renderTimeseries(ts){
+    var series = ts.series;
+    var maxRevenue = Math.max(1, Math.max.apply(null, series.map(function(d){ return d.revenue_czk; })));
+    document.getElementById('trend-chart').innerHTML = series.map(function(d){
+      var h = Math.round(d.revenue_czk / maxRevenue * 68) || 1;
+      var tip = d.date+': '+d.revenue_czk+' Kč, '+d.new_users+' nových účtů';
+      return '<div class="bar" style="height:'+h+'px;" data-tip="'+tip+'"></div>';
+    }).join('');
+    document.getElementById('trend-labels').innerHTML = series.map(function(d){
+      return '<span>'+Number(d.date.slice(8,10))+'</span>';
+    }).join('');
+  }
+
+  // ---------------------------- user detail (docs/ADMIN.md) ----------------------------
+  var openUserId = null;
+
+  window.showUserDetail = function(id){
+    openUserId = id;
+    var box = document.getElementById('user-detail');
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="mono" style="font-size:12px;">Načítám…</div>';
+    api('/admin/users/'+id).then(function(u){
+      if(openUserId !== id) return; // a later click already moved on
+      var hensHtml = u.hens.length ? u.hens.map(function(h){
+        return '<div class="route-stop"><div>'+escapeHtml(h.hen_name)+' <span class="mono" style="color:var(--ink-soft);">· '+h.daily_amount+' Kč/den · '+escapeHtml(h.address||'—')+'</span>'+
+          (h.paused?' <span class="pill warn">POZASTAVENO</span>':'')+'</div>'+
+          '<button class="small secondary" onclick="adminToggleHenPause('+h.id+','+(!h.paused)+')">'+(h.paused?'Obnovit':'Pozastavit')+'</button></div>';
+      }).join('') : '<div class="mono" style="font-size:12px;color:var(--ink-soft);">Žádné.</div>';
+      var animalsHtml = u.animals.length ? u.animals.map(function(a){
+        return '<div class="route-stop"><div>'+escapeHtml(a.name||a.species)+' <span class="mono" style="color:var(--ink-soft);">· '+a.species+'/'+a.product+' · '+a.daily_amount+' Kč/den</span>'+
+          (a.paused?' <span class="pill warn">POZASTAVENO</span>':'')+'</div>'+
+          '<button class="small secondary" onclick="adminToggleAnimalPause('+a.id+','+(!a.paused)+')">'+(a.paused?'Obnovit':'Pozastavit')+'</button></div>';
+      }).join('') : '<div class="mono" style="font-size:12px;color:var(--ink-soft);">Žádná.</div>';
+
+      box.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+          '<div class="mono" style="font-size:13px;">'+escapeHtml(u.email)+(u.is_admin?' <span class="pill">ADMIN</span>':'')+'</div>'+
+          '<div><button class="small secondary" onclick="closeUserDetail()">Zavřít</button> '+
+          (u.is_admin ? '' : '<button class="small danger" onclick="adminDeleteUser('+u.id+')">Smazat účet</button>')+'</div>'+
+        '</div>'+
+        '<div class="sub-h">Slepičky</div>'+hensHtml+
+        '<div class="sub-h">Ostatní zvířata</div>'+animalsHtml;
+    }).catch(function(e){ box.innerHTML = '<div class="err">'+e.message+'</div>'; });
+  };
+
+  window.closeUserDetail = function(){
+    openUserId = null;
+    document.getElementById('user-detail').classList.add('hidden');
+  };
+
+  window.adminToggleHenPause = function(henId, nextPaused){
+    api('/admin/hens/'+henId, {method:'PATCH', body: JSON.stringify({paused: nextPaused})})
+      .then(function(){ if(openUserId!=null) showUserDetail(openUserId); load(); })
+      .catch(function(e){ alert(e.message); });
+  };
+
+  window.adminToggleAnimalPause = function(animalId, nextPaused){
+    api('/admin/animals/'+animalId, {method:'PATCH', body: JSON.stringify({paused: nextPaused})})
+      .then(function(){ if(openUserId!=null) showUserDetail(openUserId); load(); })
+      .catch(function(e){ alert(e.message); });
+  };
+
+  window.adminDeleteUser = function(userId){
+    if(!confirm('Opravdu smazat tenhle účet? Vezme to s sebou všechny jeho slepičky/zvířata a nejde to vzít zpět.')) return;
+    api('/admin/users/'+userId, {method:'DELETE'})
+      .then(function(){ closeUserDetail(); load(); })
+      .catch(function(e){ alert(e.message); });
+  };
+
+  // ---------------------------- delivery route (docs/LOGISTICS.md) ----------------------------
+  window.showRoute = function(key){
+    var box = document.getElementById('route-detail');
+    box.classList.remove('hidden');
+    box.innerHTML = '<div class="mono" style="font-size:12px;">Počítám trasu…</div>';
+    api('/admin/farms/'+key+'/delivery-route').then(function(r){
+      var closeBtn = '<div style="text-align:right;"><button class="small secondary" onclick="document.getElementById(\'route-detail\').classList.add(\'hidden\')">Zavřít</button></div>';
+      if(r.note){
+        box.innerHTML = closeBtn+'<div class="mono" style="font-size:12px;color:var(--ink-soft);">'+escapeHtml(r.note)+'</div>';
+        return;
+      }
+      var stopsHtml = r.route.length ? r.route.map(function(s, i){
+        return '<div class="route-stop"><div>'+(i+1)+'. '+(s.kind==='hen'?'🐔':'🐐')+' '+escapeHtml(s.name)+' <span class="mono" style="color:var(--ink-soft);">'+escapeHtml(s.address||'')+'</span></div>'+
+          '<div class="mono" style="color:var(--ink-soft);">+'+s.leg_km+' km · '+s.running_km+' km celkem</div></div>';
+      }).join('') : '<div class="mono" style="font-size:12px;color:var(--ink-soft);">Žádné aktivní doručení s uloženou polohou.</div>';
+      var unlocatedHtml = r.unlocated.length
+        ? '<div class="sub-h">Bez uložené polohy (nejde zařadit do trasy)</div>'+r.unlocated.map(function(s){
+            return '<div class="route-stop"><div>'+(s.kind==='hen'?'🐔':'🐐')+' '+escapeHtml(s.name)+'</div><div class="mono" style="color:var(--ink-soft);">'+escapeHtml(s.address||'—')+'</div></div>';
+          }).join('')
+        : '';
+      box.innerHTML = closeBtn+
+        '<div class="sub-h">'+escapeHtml(r.farm_name)+' - trasa ('+r.total_km+' km celkem)</div>'+
+        stopsHtml+unlocatedHtml;
+    }).catch(function(e){ box.innerHTML = '<div class="err">'+e.message+'</div>'; });
+  };
+
+  function escapeHtml(s){
+    return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
   }
 
   window.createFarm = function(){
@@ -163,10 +288,10 @@
   function load(){
     var gateErr = document.getElementById('gate-err');
     gateErr.textContent = '';
-    Promise.all([api('/admin/stats'), api('/admin/farms'), api('/admin/users')]).then(function(r){
+    Promise.all([api('/admin/stats'), api('/admin/farms'), api('/admin/users'), api('/admin/stats/timeseries')]).then(function(r){
       document.getElementById('gate').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
-      renderStats(r[0]); renderFarms(r[1]); renderUsers(r[2]);
+      renderStats(r[0]); renderFarms(r[1]); renderUsers(r[2]); renderTimeseries(r[3]);
     }).catch(function(e){
       document.getElementById('app').classList.add('hidden');
       document.getElementById('gate').classList.remove('hidden');

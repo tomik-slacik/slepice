@@ -93,6 +93,17 @@ class Hen(Base):
     farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False, index=True)
     daily_amount = Column(Integer, nullable=False, default=20)
     address = Column(String, nullable=False, default="")
+    # Captured from the same device-geolocation permission already asked for
+    # farm search during onboarding (see app/webapp/index.html's
+    # requestLocation()) - nothing new to ask the user for. Both null for
+    # any hen adopted without granting location, or from before this
+    # existed. Not exposed on HenOut (see schemas.py) - a customer's own
+    # coordinates have no reason to round-trip back to their own client,
+    # and nobody else's hen is ever visible to begin with; only
+    # GET /admin/farms/{key}/delivery-route reads these directly off the
+    # ORM object. See docs/LOGISTICS.md for what this enables.
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
     paused = Column(Boolean, nullable=False, default=False)
     # None normally. "billing" when a failed wallet top-up paused this hen
     # automatically (see routers/wallet.py) rather than the user choosing
@@ -232,6 +243,8 @@ class Animal(Base):
     farm_id = Column(Integer, ForeignKey("farms.id"), nullable=False, index=True)
     daily_amount = Column(Integer, nullable=False, default=20)
     address = Column(String, nullable=False, default="")
+    lat = Column(Float, nullable=True)  # see the long comment on Hen.lat - same deal
+    lng = Column(Float, nullable=True)
     paused = Column(Boolean, nullable=False, default=False)
     paused_reason = Column(String, nullable=True)  # same "billing" convention as Hen.paused_reason
     created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))

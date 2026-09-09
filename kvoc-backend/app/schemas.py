@@ -107,6 +107,11 @@ class HenCreate(BaseModel):
         default=config.DEFAULT_DAILY_AMOUNT, ge=config.MIN_DAILY_AMOUNT, le=config.MAX_DAILY_AMOUNT
     )
     address: str = Field(default="", max_length=200)
+    # Optional - the frontend already has these on hand from the farm-search
+    # geolocation step, see models.Hen.lat's comment. Omitted entirely (not
+    # just null) by any client that never asked for location.
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
 class HenUpdate(BaseModel):
@@ -192,6 +197,8 @@ class AnimalCreate(BaseModel):
         default=config.DEFAULT_DAILY_AMOUNT, ge=config.MIN_DAILY_AMOUNT, le=config.MAX_DAILY_AMOUNT
     )
     address: str = Field(default="", max_length=200)
+    lat: Optional[float] = Field(default=None, ge=-90, le=90)  # see HenCreate.lat's comment
+    lng: Optional[float] = Field(default=None, ge=-180, le=180)
 
 
 class AnimalUpdate(BaseModel):

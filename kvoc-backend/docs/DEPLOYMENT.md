@@ -105,10 +105,15 @@ Docker image. Obecný postup:
 - **Bezplatné úrovně obvykle appku "uspávají"** po pár minutách bez
   provozu a znovu probouzí až na další požadavek. To znamená, že
   `app/scheduler.py` (denní úkol v 8:00) **nemusí spolehlivě naběhnout**,
-  pokud appka zrovna spí. Pro skutečný provoz buď placená "always on"
-  úroveň, nebo externí služba, která `POST /admin/run-tick` zavolá zvenku
-  v daný čas (`/admin/run-tick` už teď vyžaduje admin přihlášení - viz
-  `ADMIN.md` - tenhle TODO je vyřešený).
+  pokud appka zrovna spí. Řešeno: [`.github/workflows/daily-tick.yml`](../../.github/workflows/daily-tick.yml)
+  volá `POST /admin/run-tick` zvenku, dvakrát denně (ráno + záložně
+  odpoledne, pro případ že první pokus selže) - probudí appku i spustí
+  tik napřímo, bezpečně i souběžně s interním schedulerem (tik je
+  idempotentní na kalendářní den, viz `app/tick.py`). Potřebuje dva
+  repozitářové secrets v GitHubu (`KVOC_API_URL`, `KVOC_ADMIN_TOKEN`) -
+  bez nich workflow běží, ale rovnou selže s jasnou chybou, viz
+  komentář v tom souboru. Placená "always on" úroveň zůstává alternativa,
+  pokud radši nic navíc nastavovat nechceš.
 - **Jakmile appka běží na skutečné adrese**, otevři
   `mobile-app-real/www/config.js` a nastav `window.KVOC_API_BASE` na tu
   adresu (`https://...`) — to je jediná změna, co `mobile-app-real/`

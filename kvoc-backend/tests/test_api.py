@@ -17,6 +17,8 @@ if os.path.exists("test_kvoc.db"):
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app import models  # noqa: E402
+from app.database import SessionLocal  # noqa: E402
 from app.main import app  # noqa: E402
 
 ADMIN_HEADERS = {"X-Admin-Token": "test-admin-token"}
@@ -42,8 +44,13 @@ def _new_user_headers(client, email=None):
     return {"Authorization": f"Bearer {token}"}, email
 
 
-def _adopt_hen(client, headers, daily_amount=20, farm_key="lipa"):
-    r = client.post("/hens", json={"hen_name": "Testovačka", "farm_key": farm_key, "daily_amount": daily_amount}, headers=headers)
+def _adopt_hen(client, headers, daily_amount=20, farm_key="lipa", lat=None, lng=None):
+    body = {"hen_name": "Testovačka", "farm_key": farm_key, "daily_amount": daily_amount}
+    if lat is not None:
+        body["lat"] = lat
+    if lng is not None:
+        body["lng"] = lng
+    r = client.post("/hens", json=body, headers=headers)
     assert r.status_code == 201, r.text
     return r.json()
 
@@ -697,3 +704,107 @@ def test_admin_can_create_and_update_a_real_farm(client):
     headers, _ = _new_user_headers(client)
     r = client.post("/hens", json={"hen_name": "X", "farm_key": "test-nova-farma"}, headers=headers)
     assert r.status_code == 201
+
+
+def test_admin_can_view_and_edit_a_users_hen(client):
+    headers, email = _new_user_headers(client)
+    hen = _adopt_hen(client, headers, farm_key="dvur")
+
+    r = client.get(f"/admin/users/{hen['user_id']}", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    detail = r.json()
+    assert detail["email"] == email
+    assert [h["id"] for h in detail["hens"]] == [hen["id"]]
+    assert detail["animals"] == []
+
+    # a support request acted on directly, no "please do this yourself" - see docs/ADMIN.md
+    r = client.patch(f"/admin/hens/{hen['id']}", json={"paused": True}, headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    assert r.json()["paused"] is True
+
+    # the owner sees the change too - this is the same row, not a shadow copy
+    r = client.get(f"/hens/{hen['id']}", headers=headers)
+    assert r.json()["paused"] is True
+
+    r = client.get("/admin/users/99999999", headers=ADMIN_HEADERS)
+    assert r.status_code == 404
+    r = client.patch("/admin/hens/99999999", json={"paused": True}, headers=ADMIN_HEADERS)
+    assert r.status_code == 404
+
+
+def test_admin_can_delete_a_user_but_not_an_admin_account(client):
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers)
+    user_id = hen["user_id"]
+
+    r = client.delete(f"/admin/users/{user_id}", headers=ADMIN_HEADERS)
+    assert r.status_code == 204
+
+    # cascaded - the hen (and the account itself) are really gone, not just hidden
+    r = client.get(f"/admin/users/{user_id}", headers=ADMIN_HEADERS)
+    assert r.status_code == 404
+    r = client.get(f"/hens/{hen['id']}", headers=headers)
+    assert r.status_code == 401  # the token's own account no longer exists
+
+    # deleting an unknown id is a clean 404, not a 500
+    r = client.delete("/admin/users/99999999", headers=ADMIN_HEADERS)
+    assert r.status_code == 404
+
+    # can't remove an admin account through this endpoint (see delete_user's docstring)
+    admin_user = models.User(email="admin-guard@example.com", password_hash="x", is_admin=True)
+    db = SessionLocal()
+    db.add(admin_user)
+    db.commit()
+    db.refresh(admin_user)
+    admin_id = admin_user.id
+    db.close()
+    r = client.delete(f"/admin/users/{admin_id}", headers=ADMIN_HEADERS)
+    assert r.status_code == 400
+
+
+def test_admin_stats_timeseries_reflects_real_signups_and_revenue(client):
+    headers, _ = _new_user_headers(client)
+    hen = _adopt_hen(client, headers)
+    client.post(f"/hens/{hen['id']}/wallet/setup-intent", headers=headers)
+    client.post(f"/hens/{hen['id']}/wallet/topup", json={"amount_czk": 150}, headers=headers)
+
+    r = client.get("/admin/stats/timeseries", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["days"] == 14
+    assert len(body["series"]) == 14
+    today_key = dt.date.today().isoformat()
+    today_bucket = [b for b in body["series"] if b["date"] == today_key][0]
+    assert today_bucket["new_users"] >= 1
+    assert today_bucket["revenue_czk"] >= 150
+
+    # a silly "days" gets clamped, not rejected or taken literally
+    r = client.get("/admin/stats/timeseries?days=999", headers=ADMIN_HEADERS)
+    assert len(r.json()["series"]) <= 90
+
+
+def test_delivery_route_orders_hens_by_distance_from_the_farm(client):
+    headers_a, _ = _new_user_headers(client)
+    headers_b, _ = _new_user_headers(client)
+    headers_c, _ = _new_user_headers(client)
+
+    # "lipa" is seeded at lat 49.8564, lng 14.8636 (app/seed.py) - B is
+    # placed closer than A on purpose, so a correct route must visit B first
+    far = _adopt_hen(client, headers_a, farm_key="lipa", lat=49.90, lng=14.90)
+    near = _adopt_hen(client, headers_b, farm_key="lipa", lat=49.86, lng=14.87)
+    no_location = _adopt_hen(client, headers_c, farm_key="lipa")  # no lat/lng at all
+
+    r = client.get("/admin/farms/lipa/delivery-route", headers=ADMIN_HEADERS)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["farm_key"] == "lipa"
+    route_ids = [s["id"] for s in body["route"] if s["kind"] == "hen"]
+    assert route_ids.index(near["id"]) < route_ids.index(far["id"])
+    # distances accumulate, never decrease
+    kms = [s["running_km"] for s in body["route"]]
+    assert kms == sorted(kms)
+    assert body["total_km"] == kms[-1]
+    assert no_location["id"] in [u["id"] for u in body["unlocated"]]
+
+    r = client.get("/admin/farms/unknown-farm-key/delivery-route", headers=ADMIN_HEADERS)
+    assert r.status_code == 404

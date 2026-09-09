@@ -28,20 +28,45 @@ bývalo v `app/routers/admin.py` a teď je vyřešené).
 
 - **Přehled** — počet účtů, slepiček, aktivní/pozastavené, celkové tržby,
   počet neúspěšných plateb, a totéž pro ostatní zvířata a sdílené chovy
-  na maso (`docs/LIVESTOCK.md`).
+  na maso (`docs/LIVESTOCK.md`), plus **trend za posledních 14 dní**
+  (nových účtů a tržeb za den, `GET /admin/stats/timeseries?days=`) —
+  malý sloupcový graf pod dlaždicemi, ne jen aktuální čísla.
 - **Farmy** — seznam s obsazeností, formulář na přidání skutečné farmy
   (klíč, název, poloha, kapacita) — jakmile ji přidáš, appka ji hned
-  nabízí při adopci, včetně hledání podle vzdálenosti.
+  nabízí při adopci, včetně hledání podle vzdálenosti. Tlačítko
+  **Trasa** u každé farmy spočítá a ukáže páteční rozvozovou trasu (viz
+  `docs/LOGISTICS.md`) — kdo je activ na řadě, v jakém pořadí, kolik km
+  mezi zastávkami, a kdo nemá uloženou polohu (nedá se zařadit).
 - **Uživatelé** — e-mail, počet slepiček, jestli má uloženou platební
   metodu, kdy se zaregistroval. `GET /admin/users` je stránkované
   (`?limit=&offset=`, výchozí 100/stránka) — přehled zatím zobrazuje jen
-  první stránku, viz "Co (zatím) neumí" níž.
+  první stránku, viz "Co (zatím) neumí" níž. Tlačítko **Detail** u
+  každého uživatele (`GET /admin/users/{id}`) ukáže jeho slepičky i
+  ostatní zvířata se jmény/farmou/částkou — a přímo odsud jde:
+  - **pozastavit/obnovit** jednotlivou slepičku nebo zvíře
+    (`PATCH /admin/hens/{id}`, `PATCH /admin/animals/{id}`) — stejná pole,
+    co může měnit sám zákazník, jen bez kontroly vlastnictví, takže
+    support požadavek ("můžeš mi prosím pozastavit slepičku, jsem na
+    dovolené") jde rovnou vyřídit místo jen přeposlat zpátky uživateli;
+  - **smazat celý účet** (`DELETE /admin/users/{id}`) — skutečné smazání
+    v kaskádě (slepičky, zvířata, podíly na mase, historie), stejný
+    mechanismus jako `DELETE /auth/me`, jen spouštěný adminem za
+    uživatele. Skutečná potřeba kvůli GDPR výmazu
+    (`docs/BUSINESS_CHECKLIST.md`), ne jen "moderace" — odmítne smazat
+    účet s `is_admin=True` touhle cestou schválně (nechceš si omylem
+    smazat jediný admin účet).
 - **Denní tik ručně** (`POST /admin/run-tick`) — stejná appka jako dřív,
-  teď jen zamčená za přihlášením.
+  teď jen zamčená za přihlášením. V produkci navíc běží automaticky
+  přes GitHub Actions (`.github/workflows/daily-tick.yml`) — řeší
+  přesně tohle, viz `docs/DEPLOYMENT.md`'s "Co si pohlídat".
 
 ## Co (zatím) neumí
 
-Žádné mazání/blokování uživatele, žádná editace slepičky za uživatele,
-žádný graf v čase (jen aktuální čísla), přehled si zatím nenačítá druhou
-stránku uživatelů sám (API to podporuje, `admin.html` ještě ne) — základ,
-co odpovídá reálnému provozu appky teď, ne kompletní back-office nástroj.
+Přehled si zatím nenačítá druhou stránku uživatelů sám (API to podporuje,
+`admin.html` ještě ne). `PATCH /admin/hens/{id}`/`.../animals/{id}` už
+podporují stejná pole jako zákaznická verze (jméno, adresa, denní
+částka, pauza) — `admin.html`'s Detail panel z toho zatím ve svém UI
+nabízí jen pozastavit/obnovit, ne úpravu jména/adresy/částky natvrdo
+(chybí tam formulář, ne backend). Žádné hromadné akce (jedna
+slepička/účet najednou) — základ, co odpovídá reálnému provozu appky
+teď, ne kompletní back-office nástroj.

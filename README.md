@@ -14,7 +14,7 @@ domů — dřív appka jen o slepicích ("Kvoč"), teď celý malý statek.
   v `localStorage`, žádný backend potřeba.
 - **`kvoc-backend/`** — API server s **přihlašováním** (JWT, bcrypt),
   **skutečnou platební integrací pro Stripe** (otestováno, nikdy neběžela
-  proti reálnému účtu — ten je na tobě) a skutečným denním cyklem. 82
+  proti reálnému účtu — ten je na tobě) a skutečným denním cyklem. 87
   testů. Obsahuje i **[`app/webapp/`](kvoc-backend/app/webapp/)** —
   tatáž appka, ale doopravdy napojená na tohle API místo na
   `localStorage`; proklikaná a ověřená v prohlížeči, včetně chyb, které

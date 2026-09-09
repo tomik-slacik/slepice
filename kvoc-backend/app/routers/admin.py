@@ -12,10 +12,13 @@ from sqlalchemy.orm import Session
 from .. import config, models, schemas
 from ..auth import require_admin
 from ..database import get_db
+from ..geo import haversine_km
 from ..integrations.notifications import get_notification_provider
 from ..tick import run_animal_tick_for_all, run_tick_for_all
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+_SPECIES_LABEL_CS = {"goat": "Koza", "sheep": "Ovce", "cow": "Kráva"}
 
 
 @router.post("/run-tick")
@@ -71,6 +74,58 @@ def get_stats(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/stats/timeseries")
+def get_stats_timeseries(days: int = 14, db: Session = Depends(get_db)):
+    """Daily new-signup and revenue counts for the last `days` days
+    (default 14) - /stats above only ever gave a current snapshot, never a
+    trend (see the former "žádný graf v čase" line in docs/ADMIN.md).
+    Revenue here means real money actually charged (wallet top-ups, meat-
+    share contributions), same definition /stats already uses - not a
+    projection.
+
+    Bucketed here in Python rather than a DB-side date-trunc, so it behaves
+    identically on SQLite (dev) and Postgres (production, see
+    docs/DEPLOYMENT.md) instead of depending on either dialect's date
+    functions - the data volumes this app deals with make that cheap.
+    """
+    days = max(1, min(days, 90))
+    since_date = dt.date.today() - dt.timedelta(days=days - 1)
+    since = dt.datetime.combine(since_date, dt.time.min, tzinfo=dt.timezone.utc)
+
+    buckets = {}
+    for i in range(days):
+        d = since_date + dt.timedelta(days=i)
+        buckets[d.isoformat()] = {"date": d.isoformat(), "new_users": 0, "revenue_czk": 0}
+
+    def _bucket_for(created_at: dt.datetime):
+        # SQLite round-trips datetimes as naive (drops the tzinfo the model
+        # default attaches on write) - .date() is correct either way, only
+        # a naive/aware *comparison* would need care, and there isn't one here
+        return buckets.get(created_at.date().isoformat())
+
+    for (created_at,) in db.query(models.User.created_at).filter(models.User.created_at >= since).all():
+        b = _bucket_for(created_at)
+        if b:
+            b["new_users"] += 1
+
+    topups = (
+        db.query(models.WalletTopUp.created_at, models.WalletTopUp.amount_czk)
+        .filter(models.WalletTopUp.status == "succeeded", models.WalletTopUp.created_at >= since)
+        .all()
+    )
+    contributions = (
+        db.query(models.ShareContribution.created_at, models.ShareContribution.amount_czk)
+        .filter(models.ShareContribution.created_at >= since)
+        .all()
+    )
+    for created_at, amount in [*topups, *contributions]:
+        b = _bucket_for(created_at)
+        if b:
+            b["revenue_czk"] += amount
+
+    return {"days": days, "series": [buckets[k] for k in sorted(buckets)]}
+
+
 @router.get("/users")
 def list_users(limit: int = 100, offset: int = 0, db: Session = Depends(get_db)):
     """Paginated - an unbounded `SELECT *` of every account ever registered
@@ -115,6 +170,151 @@ def list_users(limit: int = 100, offset: int = 0, db: Session = Depends(get_db))
             }
             for u in users
         ],
+    }
+
+
+@router.get("/users/{user_id}")
+def get_user_detail(user_id: int, db: Session = Depends(get_db)):
+    """The one-line-per-user list above deliberately doesn't carry hen/animal
+    ids (a list of hundreds of users doesn't want every hen's id inline) -
+    this is where a support conversation ("can you pause my hen, I'm on
+    holiday") actually gets acted on, via PATCH /admin/hens/{id} below.
+    """
+    user = db.get(models.User, user_id)
+    if user is None:
+        raise HTTPException(404, "user not found")
+    return {
+        "id": user.id,
+        "email": user.email,
+        "created_at": user.created_at,
+        "is_admin": user.is_admin,
+        "has_saved_payment_method": bool(user.stripe_customer_id),
+        "hens": [
+            {
+                "id": h.id, "hen_name": h.hen_name, "farm_id": h.farm_id,
+                "daily_amount": h.daily_amount, "address": h.address, "paused": h.paused,
+            }
+            for h in user.hens
+        ],
+        "animals": [
+            {
+                "id": a.id, "species": a.species, "product": a.product, "name": a.name,
+                "farm_id": a.farm_id, "daily_amount": a.daily_amount, "address": a.address, "paused": a.paused,
+            }
+            for a in user.animals
+        ],
+    }
+
+
+@router.delete("/users/{user_id}", status_code=204)
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    """Hard delete, cascading to everything under the account - hens,
+    animals, meat-share contributions and everything under those in turn
+    (see the cascade="all, delete-orphan" relationships on User in
+    models.py) - the same mechanism DELETE /auth/me already relies on for a
+    user deleting their own account, just admin-triggered for someone else's.
+    A real need, not just moderation - see docs/BUSINESS_CHECKLIST.md's
+    GDPR "žádosti o výmaz" line, which this was the missing piece for.
+
+    Refuses to delete an admin account through this endpoint. Not because
+    it's technically any different to cascade-delete - because a careless
+    click removing the only admin account (or the one you're using right
+    now) is a much worse failure mode than the same click on an ordinary
+    customer, and there's no "undo" on a hard delete.
+    """
+    user = db.get(models.User, user_id)
+    if user is None:
+        raise HTTPException(404, "user not found")
+    if user.is_admin:
+        raise HTTPException(400, "won't delete an admin account through this endpoint")
+    db.delete(user)
+    db.commit()
+
+
+@router.patch("/hens/{hen_id}", response_model=schemas.HenOut)
+def admin_update_hen(hen_id: int, payload: schemas.HenUpdate, db: Session = Depends(get_db)):
+    """Same fields a customer can change themselves (PATCH /hens/{id}), just
+    without the ownership check - so a support request can actually be
+    acted on instead of only relayed back to the user ("please pause it
+    yourself"). See docs/ADMIN.md.
+    """
+    hen = db.get(models.Hen, hen_id)
+    if hen is None:
+        raise HTTPException(404, "hen not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(hen, field, value)
+    db.commit()
+    db.refresh(hen)
+    return hen
+
+
+@router.patch("/animals/{animal_id}", response_model=schemas.AnimalOut)
+def admin_update_animal(animal_id: int, payload: schemas.AnimalUpdate, db: Session = Depends(get_db)):
+    """Same as admin_update_hen above, for the other-livestock side."""
+    animal = db.get(models.Animal, animal_id)
+    if animal is None:
+        raise HTTPException(404, "animal not found")
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(animal, field, value)
+    db.commit()
+    db.refresh(animal)
+    return animal
+
+
+@router.get("/farms/{key}/delivery-route")
+def get_delivery_route(key: str, db: Session = Depends(get_db)):
+    """Turns "every active hen/animal at this farm" into one ordered
+    delivery route instead of a random stop order - see docs/LOGISTICS.md's
+    "co appka může pomoct" section, which this is the previously-missing
+    piece for. Greedy nearest-neighbor from the farm's own location: not a
+    real-roads routing engine (nothing like that is wired up here, and
+    straight-line "as the crow flies" distance is all Hen.lat/lng and
+    Farm.lat/lng give us) - but a long way better than the stop order
+    happening to match whoever adopted in what order.
+
+    Only covers hens/animals that (a) aren't paused this week and (b) have
+    a saved lat/lng - see models.Hen.lat's comment for why that can be
+    null. Anyone missing either is listed separately under `unlocated`
+    rather than silently dropped, so nobody's delivery goes unplanned just
+    because the app doesn't know where to draw them on the route.
+    """
+    farm = db.query(models.Farm).filter(models.Farm.key == key).first()
+    if farm is None:
+        raise HTTPException(404, f"unknown farm key '{key}'")
+
+    located, unlocated = [], []
+    for hen in db.query(models.Hen).filter(models.Hen.farm_id == farm.id, models.Hen.paused.is_(False)).all():
+        entry = {"kind": "hen", "id": hen.id, "name": hen.hen_name, "address": hen.address, "lat": hen.lat, "lng": hen.lng}
+        (located if hen.lat is not None and hen.lng is not None else unlocated).append(entry)
+    for animal in db.query(models.Animal).filter(models.Animal.farm_id == farm.id, models.Animal.paused.is_(False)).all():
+        label = animal.name or _SPECIES_LABEL_CS.get(animal.species, animal.species)
+        entry = {"kind": "animal", "id": animal.id, "name": label, "address": animal.address, "lat": animal.lat, "lng": animal.lng}
+        (located if animal.lat is not None and animal.lng is not None else unlocated).append(entry)
+
+    if farm.lat is None or farm.lng is None:
+        # nothing to anchor a route to at all - every stop just goes to
+        # "unlocated" rather than pretending an order that isn't real
+        return {
+            "farm_key": key, "farm_name": farm.name, "route": [], "total_km": None,
+            "unlocated": located + unlocated,
+            "note": "farma sama nemá uloženou polohu, trasu nejde spočítat",
+        }
+
+    ordered = []
+    remaining = located[:]
+    cur_lat, cur_lng = farm.lat, farm.lng
+    running_km = 0.0
+    while remaining:
+        remaining.sort(key=lambda s: haversine_km(cur_lat, cur_lng, s["lat"], s["lng"]))
+        nxt = remaining.pop(0)
+        leg_km = haversine_km(cur_lat, cur_lng, nxt["lat"], nxt["lng"])
+        running_km += leg_km
+        ordered.append({**nxt, "leg_km": leg_km, "running_km": round(running_km, 1)})
+        cur_lat, cur_lng = nxt["lat"], nxt["lng"]
+
+    return {
+        "farm_key": key, "farm_name": farm.name, "route": ordered,
+        "total_km": round(running_km, 1), "unlocated": unlocated,
     }
 
 

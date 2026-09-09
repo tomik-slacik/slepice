@@ -1,4 +1,3 @@
-import math
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -6,20 +5,9 @@ from sqlalchemy.orm import Session
 
 from .. import config, models, schemas
 from ..database import get_db
+from ..geo import haversine_km
 
 router = APIRouter(prefix="/farms", tags=["farms"])
-
-
-def _haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    r = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dlat = math.radians(lat2 - lat1)
-    dlng = math.radians(lng2 - lng1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlng / 2) ** 2
-    # whole km, matching frontend/index.html's distanceKm() rounding - keeps
-    # a farm right at a radius boundary consistent between the offline demo
-    # and this real endpoint instead of one keeping a decimal the other drops
-    return round(r * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
 
 
 @router.get("", response_model=List[schemas.FarmOut])
@@ -44,7 +32,7 @@ def list_farms(
         row = schemas.FarmOut.model_validate(f)
         row.spots_left = f.weekly_capacity - len(f.hens) if f.weekly_capacity is not None else None
         if lat is not None and lng is not None and f.lat is not None and f.lng is not None:
-            row.distance_km = _haversine_km(lat, lng, f.lat, f.lng)
+            row.distance_km = haversine_km(lat, lng, f.lat, f.lng)
 
         for o in offerings:
             if o.farm_id != f.id:
