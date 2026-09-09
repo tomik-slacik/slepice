@@ -97,6 +97,21 @@
   .amount-display{display:flex;align-items:baseline;justify-content:center;gap:6px;}
   .amount-num{font-family:'Bitter',serif;font-weight:800;font-size:46px;color:var(--accent-text);font-variant-numeric:tabular-nums;line-height:1;}
   .amount-unit{font-family:'Bitter',serif;font-weight:700;font-size:16px;color:var(--ink-soft);}
+  /* ---------- gift voucher (frontend/index.html has the original) ---------- */
+  .voucher{position:relative;background:var(--surface-2);border:1.5px dashed var(--line);border-radius:2px;padding:18px 16px 16px;margin-top:10px;overflow:visible;}
+  .voucher::before,.voucher::after{content:'';position:absolute;top:50%;width:15px;height:15px;border-radius:50%;background:var(--surface);border:1px solid var(--line);transform:translateY(-50%);}
+  .voucher::before{left:-8px;}
+  .voucher::after{right:-8px;}
+  .voucher-stamp{position:absolute;top:-16px;right:8px;transform:rotate(-8deg);}
+  .voucher-code{font-size:10.5px;letter-spacing:1px;color:var(--accent-text);margin-bottom:12px;}
+  .voucher-row{margin-bottom:12px;}
+  .voucher-row:last-child{margin-bottom:0;}
+  .voucher-name{font-family:'Bitter',serif;font-weight:700;font-size:17px;}
+  .voucher-from{font-family:'Bitter',serif;font-weight:600;font-size:13.5px;color:var(--ink-soft);}
+  .voucher-msg{font-size:12.5px;color:var(--ink-soft);font-style:italic;line-height:1.5;padding-left:10px;border-left:2px solid var(--line);}
+  .voucher-divider{border-top:1px dashed var(--line);margin:14px 0;}
+  .voucher-amount{display:flex;align-items:baseline;gap:6px;justify-content:center;}
+  .voucher-note{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-soft);line-height:1.6;text-align:center;margin-top:10px;}
   input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:var(--line);border-radius:3px;outline:none;margin:14px 0 4px;}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-shadow:2px 2px 0 var(--shadow);cursor:pointer;}
   input[type=range]::-moz-range-thumb{width:18px;height:18px;border-radius:50%;background:var(--accent);border:3px solid var(--surface);box-shadow:2px 2px 0 var(--shadow);cursor:pointer;}
@@ -277,6 +292,25 @@
   var addAnimalDraft = {species:'', product:'', farmKey:'', dailyAmount:20, name:''};
   var shareSharesDraft = {};  // meat_share id -> how many shares the buy stepper is currently set to
 
+  // gift voucher (see frontend/index.html, where this originated) -
+  // transient, not tied to any one hen, never sent to the backend. No
+  // other-person account to create here either - this generates a
+  // shareable certificate the recipient redeems themselves by adopting
+  // their own hen with these numbers. Honest about what it actually is.
+  var giftOpen = false;
+  var giftGenerated = false;
+  var giftDraft = {recipient:'', gifter:'', amount:20, message:'', code:null};
+  // human-friendly, not cryptographically unique (no backend to check
+  // uniqueness against) - just something the giver/recipient can read out
+  // loud or write down to tell one poukaz from another. Alphabet skips
+  // 0/O/1/I/L on purpose, those are the pairs people misread copying by hand.
+  function generateVoucherCode(){
+    var alphabet = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
+    var s = '';
+    for(var i=0;i<8;i++){ s += alphabet[Math.floor(Math.random()*alphabet.length)]; }
+    return 'MAZ-' + s.slice(0,4) + '-' + s.slice(4,8);
+  }
+
   // per-animal product-log + deliveries, keyed by animal id - separate
   // from the livestock load above because it needs to know the animal ids
   // first (loaded right after, see boot()) and is what lets renderActivity()
@@ -446,7 +480,7 @@
     // app mark: hen/goat/cow/sheep in a ring, splash screen only - same
     // shape as frontend/logo.js and scripts/render-icons.html (the Android
     // launcher icon), 2x2 grid so nothing overlaps
-    mazlikLogo: '<svg viewBox="0 0 200 200" width="170" height="170" role="img" aria-label="Mazlík - slepička, koza, ovce a kráva v kruhu">'+
+    mazlikLogo: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="170" height="170" role="img" aria-label="Mazlík - slepička, koza, ovce a kráva v kruhu">'+
       '<circle cx="100" cy="100" r="94" fill="#E8DCC3" stroke="#5B4A38" stroke-width="4"/>'+
       '<g>'+
         '<circle cx="68" cy="68" r="30" fill="#A66A3B"/>'+
@@ -781,6 +815,265 @@
       '<div class="stub-list">'+list+'</div>';
   }
 
+  // ============ gift voucher ============
+  function giftCertificateText(){
+    var lines = [
+      'MAZLÍK — DÁRKOVÝ POUKAZ', '',
+      'Číslo poukazu: ' + (giftDraft.code || '—'), '',
+      'Pro: ' + (giftDraft.recipient || '—'),
+      'Od: ' + (giftDraft.gifter || '—')
+    ];
+    if(giftDraft.message){ lines.push(''); lines.push(giftDraft.message); }
+    lines.push('');
+    lines.push('Denní příspěvek: ' + giftDraft.amount + ' Kč');
+    lines.push('(přibližně ' + eggsPreview(giftDraft.amount) + ' vajec týdně)');
+    lines.push('');
+    lines.push('Jak poukaz uplatnit: otevři appku Mazlík, zvol "Adoptovat');
+    lines.push('slepičku" a nastav denní příspěvek na ' + giftDraft.amount + ' Kč.');
+    return lines.join('\n');
+  }
+
+  // circular "wax stamp" decoration, caption arced around a center word -
+  // used only on the gift voucher here.
+  var stampIdSeq = 0;
+  function stampSvg(caption, word, size){
+    size = size || 92;
+    var r = size*0.42, cx = size/2, cy = size/2;
+    var pid = 'stampArc'+(stampIdSeq++);
+    return '<svg viewBox="0 0 '+size+' '+size+'" width="'+size+'" height="'+size+'" style="overflow:visible">'+
+      '<defs><path id="'+pid+'" d="M '+(cx-r)+','+cy+' a '+r+','+r+' 0 1,1 '+(2*r)+',0"/></defs>'+
+      '<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" style="stroke:var(--accent);stroke-width:1.6;opacity:.85"/>'+
+      '<circle cx="'+cx+'" cy="'+cy+'" r="'+(r-4.5)+'" fill="none" style="stroke:var(--accent);stroke-width:1;opacity:.6"/>'+
+      '<text style="font-family:\'IBM Plex Mono\',monospace;font-size:'+(size*0.078).toFixed(1)+'px;font-weight:600;letter-spacing:1.5px;fill:var(--accent);">'+
+        '<textPath href="#'+pid+'" startOffset="50%" text-anchor="middle">'+escapeHtml(caption)+'</textPath>'+
+      '</text>'+
+      '<text x="'+cx+'" y="'+(cy+size*0.1)+'" text-anchor="middle" style="font-family:\'Rye\',serif;font-size:'+(size*0.24).toFixed(1)+'px;fill:var(--accent);">'+escapeHtml(word)+'</text>'+
+    '</svg>';
+  }
+
+  function giftCardHtml(){
+    if(giftGenerated){
+      return '<div class="card"><div class="field-label">Dárkový poukaz</div>'+
+        '<div class="voucher">'+
+          '<div class="voucher-stamp">'+stampSvg('DÁRKOVÝ POUKAZ','Mazlík',100)+'</div>'+
+          '<div class="voucher-code mono">'+escapeHtml(giftDraft.code||'')+'</div>'+
+          '<div class="voucher-row"><div class="field-label" style="margin-bottom:2px;">Pro</div><div class="voucher-name">'+escapeHtml(giftDraft.recipient||'—')+'</div></div>'+
+          '<div class="voucher-row"><div class="field-label" style="margin-bottom:2px;">Od</div><div class="voucher-from">'+escapeHtml(giftDraft.gifter||'—')+'</div></div>'+
+          (giftDraft.message ? '<div class="voucher-row voucher-msg">'+escapeHtml(giftDraft.message)+'</div>' : '')+
+          '<div class="voucher-divider"></div>'+
+          '<div class="voucher-amount"><span class="amount-num" style="font-size:32px;">'+giftDraft.amount+'</span><span class="amount-unit">Kč / den</span></div>'+
+          '<div class="center-mono">přibližně '+eggsPreview(giftDraft.amount)+' vajec týdně</div>'+
+          '<div class="voucher-note">Uplatnění: otevři appku Mazlík, zvol „Adoptovat slepičku“<br>a nastav denní příspěvek na '+giftDraft.amount+' Kč.</div>'+
+        '</div>'+
+        '<div class="pressable" data-action="gift-download-pdf" id="gift-pdf-btn" style="margin-top:14px;"><div class="btn-primary" style="font-size:13px;padding:11px;">Stáhnout PDF</div></div>'+
+        '<div class="pressable" data-action="gift-copy" style="margin-top:8px;"><div class="btn-secondary">Kopírovat text</div></div>'+
+        '<div class="pressable" data-action="gift-close" style="margin-top:6px;"><div class="btn-secondary">Zavřít</div></div>'+
+      '</div>';
+    }
+    if(!giftOpen){
+      return '<div class="card"><div class="field-label">Darovat slepičku</div>'+
+        '<div class="app-sub">Chceš appku někomu věnovat? Vygeneruješ poukaz, který si příjemce sám uplatní.</div>'+
+        '<div class="pressable" data-action="gift-open" style="margin-top:10px;"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">+ Vytvořit dárkový poukaz</div></div>'+
+      '</div>';
+    }
+    return '<div class="card"><div class="field-label">Darovat slepičku</div>'+
+      '<input class="text-input" id="gift-recipient" placeholder="Pro koho (jméno)" value="'+escapeHtml(giftDraft.recipient)+'">'+
+      '<input class="text-input" id="gift-gifter" placeholder="Od koho (tvoje jméno)" value="'+escapeHtml(giftDraft.gifter)+'" style="margin-top:8px;">'+
+      '<div class="stepper-row" style="margin-top:12px;">'+
+        '<div class="round-btn pressable" data-action="gift-minus">'+ICO.minus+'</div>'+
+        '<div class="stepper-num">'+giftDraft.amount+' Kč</div>'+
+        '<div class="round-btn pressable" data-action="gift-plus">'+ICO.plus+'</div>'+
+      '</div>'+
+      '<div class="center-mono" style="margin-top:4px;">přibližně '+eggsPreview(giftDraft.amount)+' vajec týdně</div>'+
+      '<input class="text-input" id="gift-message" placeholder="Vzkaz (nepovinné)" value="'+escapeHtml(giftDraft.message)+'" style="margin-top:8px;">'+
+      '<div class="pressable" data-action="gift-generate" style="margin-top:12px;"><div class="btn-primary" style="font-size:13.5px;padding:12px;">Vygenerovat poukaz</div></div>'+
+      '<div class="pressable" data-action="gift-close" style="margin-top:6px;"><div class="btn-secondary">Zrušit</div></div>'+
+    '</div>';
+  }
+  function syncGiftInputsFromDom(){
+    var rEl=document.getElementById('gift-recipient'), gEl=document.getElementById('gift-gifter'), mEl=document.getElementById('gift-message');
+    if(rEl) giftDraft.recipient = rEl.value;
+    if(gEl) giftDraft.gifter = gEl.value;
+    if(mEl) giftDraft.message = mEl.value;
+  }
+
+  // ============ gift voucher PDF export ============
+  // No PDF library anywhere in this project - so this hand-writes a
+  // minimal-but-valid PDF: draw the voucher onto a <canvas> (same fonts as
+  // the rest of the app, so Czech diacritics are just... correct, unlike
+  // pushing text through a PDF base14 font's WinAnsiEncoding, which is
+  // missing č/ď/ě/ň/ř/ť/ů), export that canvas as a JPEG, and wrap the
+  // JPEG bytes (verbatim, no re-encoding - DCTDecode means "this stream
+  // already is a JPEG") in the smallest PDF object structure a viewer will
+  // accept: one Catalog, one Pages, one Page, one Image XObject, one
+  // content stream that places the image full-page.
+  function svgToImagePromise(svgString){
+    return new Promise(function(resolve, reject){
+      var img = new Image();
+      img.onload = function(){ resolve(img); };
+      img.onerror = reject;
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgString)));
+    });
+  }
+
+  // canvas has no built-in word-wrap - break `text` into lines no wider
+  // than maxWidth (using the ctx's already-set font to measure), draw up
+  // to maxLines of them, ellipsize the last one if there's more left over
+  function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight, maxLines){
+    var words = (text||'').split(/\s+/).filter(Boolean);
+    var lines = [], line = '';
+    for(var i=0;i<words.length;i++){
+      var test = line ? line+' '+words[i] : words[i];
+      if(line && ctx.measureText(test).width > maxWidth){ lines.push(line); line = words[i]; }
+      else { line = test; }
+    }
+    if(line) lines.push(line);
+    var truncated = lines.length > maxLines;
+    lines = lines.slice(0, maxLines);
+    if(truncated){
+      var last = lines[lines.length-1];
+      while(last.length && ctx.measureText(last+'…').width > maxWidth){ last = last.slice(0,-1); }
+      lines[lines.length-1] = last+'…';
+    }
+    lines.forEach(function(l, i){ ctx.fillText(l, x, y+i*lineHeight); });
+    return lines.length;
+  }
+
+  // Renders the *current* giftDraft (must already be giftGenerated, i.e.
+  // have a code) onto a certificate-shaped canvas and returns a Promise of
+  // a JPEG data: URL. Page is A4 landscape at 72pt/in (842x595pt - exactly
+  // matches the PDF page size below, 1 canvas point = 1 PDF point) but
+  // drawn at 2x pixel density for print-quality sharpness.
+  function voucherCanvasDataUrl(){
+    var W = 842, H = 595, SCALE = 2;
+    var fontSpecs = [
+      '400 34px Rye', '700 27px Bitter', '800 54px Bitter', '600 19px Bitter',
+      '600 11px "IBM Plex Mono"', '500 12px "IBM Plex Mono"', '600 13px "IBM Plex Mono"',
+      '400 14px Karla', 'italic 400 14px Karla'
+    ];
+    var fontsReady = (window.document && document.fonts && document.fonts.load)
+      ? Promise.all(fontSpecs.map(function(s){ return document.fonts.load(s).catch(function(){}); }))
+      : Promise.resolve();
+    var logoReady = svgToImagePromise(ICO.mazlikLogo).catch(function(){ return null; });
+
+    return Promise.all([fontsReady, logoReady]).then(function(results){
+      var logoImg = results[1];
+      var canvas = document.createElement('canvas');
+      canvas.width = W*SCALE; canvas.height = H*SCALE;
+      var ctx = canvas.getContext('2d');
+      ctx.scale(SCALE, SCALE);
+
+      ctx.fillStyle = '#E8DCC3'; ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = '#F6F0E3'; ctx.fillRect(26, 26, W-52, H-52);
+      ctx.strokeStyle = '#CDBB93'; ctx.lineWidth = 1.5; ctx.setLineDash([7,5]);
+      ctx.strokeRect(26, 26, W-52, H-52);
+      ctx.setLineDash([]);
+
+      var cx = W/2;
+      if(logoImg){ ctx.drawImage(logoImg, cx-42, 44, 84, 84); }
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#C4471F';
+      ctx.font = '400 34px Rye, serif';
+      ctx.fillText('Mazlík', cx, 168);
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '600 11px "IBM Plex Mono", monospace';
+      ctx.fillText('D Á R K O V Ý   P O U K A Z', cx, 190);
+
+      ctx.strokeStyle = '#CDBB93'; ctx.setLineDash([4,4]);
+      ctx.beginPath(); ctx.moveTo(90, 214); ctx.lineTo(W-90, 214); ctx.stroke();
+      ctx.setLineDash([]);
+
+      var leftX = 90;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '600 11px "IBM Plex Mono", monospace';
+      ctx.fillText('PRO', leftX, 250);
+      ctx.fillStyle = '#241B14';
+      ctx.font = '700 27px Bitter, serif';
+      ctx.fillText(giftDraft.recipient || '—', leftX, 282);
+
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '600 11px "IBM Plex Mono", monospace';
+      ctx.fillText('OD', leftX, 314);
+      ctx.font = '600 19px Bitter, serif';
+      ctx.fillText(giftDraft.gifter || '—', leftX, 340);
+
+      if(giftDraft.message){
+        ctx.font = 'italic 400 14px Karla, sans-serif';
+        ctx.fillStyle = '#5B4A38';
+        wrapCanvasText(ctx, giftDraft.message, leftX, 372, W-2*leftX, 20, 2);
+      }
+
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#241B14';
+      ctx.font = '800 54px Bitter, serif';
+      ctx.fillText(giftDraft.amount+' Kč', cx, 450);
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '400 14px Karla, sans-serif';
+      ctx.fillText('denně · přibližně '+eggsPreview(giftDraft.amount)+' vajec týdně', cx, 472);
+
+      ctx.font = '500 12px "IBM Plex Mono", monospace';
+      ctx.fillText('Uplatnění: otevři appku Mazlík, zvol „Adoptovat slepičku“', cx, 506);
+      ctx.fillText('a nastav denní příspěvek na '+giftDraft.amount+' Kč.', cx, 522);
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#9A371A';
+      ctx.font = '600 13px "IBM Plex Mono", monospace';
+      ctx.fillText(giftDraft.code || '', leftX, H-52);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = '#5B4A38';
+      ctx.font = '500 12px "IBM Plex Mono", monospace';
+      var genNow = new Date();
+      ctx.fillText('vygenerováno '+genNow.getDate()+'.'+(genNow.getMonth()+1)+'.'+genNow.getFullYear(), W-leftX, H-52);
+
+      return canvas.toDataURL('image/jpeg', 0.92);
+    });
+  }
+
+  // Hand-written minimal PDF: one page, one embedded JPEG filling it.
+  // jpegDataUrl is a "data:image/jpeg;base64,..." string; pxW/pxH are the
+  // JPEG's actual pixel dimensions (for the image dict), ptW/ptH are the
+  // PDF page size in points (72pt = 1in) the image gets scaled to fill.
+  function buildMinimalPdf(jpegDataUrl, pxW, pxH, ptW, ptH){
+    var jpegBin = atob(jpegDataUrl.split(',')[1]); // one JS char per byte, already binary-safe
+    var parts = [], offsets = [], pos = 0;
+    function push(str){ offsets.push(pos); parts.push(str); pos += str.length; return offsets[offsets.length-1]; }
+
+    push('%PDF-1.4\n');
+    var o1 = push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+    var o2 = push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+    var o3 = push('3 0 obj\n<< /Type /Page /Parent 2 0 R /Resources << /XObject << /Im1 4 0 R >> >> /MediaBox [0 0 '+ptW+' '+ptH+'] /Contents 5 0 R >>\nendobj\n');
+    var o4 = push('4 0 obj\n<< /Type /XObject /Subtype /Image /Width '+pxW+' /Height '+pxH+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+jpegBin.length+' >>\nstream\n');
+    push(jpegBin);
+    push('\nendstream\nendobj\n');
+    var contentStream = 'q '+ptW+' 0 0 '+ptH+' 0 0 cm /Im1 Do Q';
+    var o5 = push('5 0 obj\n<< /Length '+contentStream.length+' >>\nstream\n'+contentStream+'\nendstream\nendobj\n');
+
+    var xrefStart = pos;
+    var xref = 'xref\n0 6\n0000000000 65535 f \n';
+    [o1,o2,o3,o4,o5].forEach(function(o){
+      var s = ''+o; while(s.length<10) s='0'+s;
+      xref += s+' 00000 n \n';
+    });
+    push(xref);
+    push('trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n'+xrefStart+'\n%%EOF');
+
+    var full = parts.join('');
+    var bytes = new Uint8Array(full.length);
+    for(var i=0;i<full.length;i++){ bytes[i] = full.charCodeAt(i) & 0xFF; }
+    return bytes;
+  }
+
+  function downloadBlob(blob, filename){
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 4000);
+  }
+
   // ============ render: settings ============
   function renderSettings(){
     var weekly = hen.daily_amount*5;
@@ -814,6 +1107,7 @@
         '<div class="hint mono" style="margin-top:8px;">V appce vždycky uvidíš oznámení jako lištu nahoře. Skutečná oznámení telefonu závisí na tvém prohlížeči.</div></div>'+
       '<div class="field-label" style="margin-top:16px;">Ostatní zvířata</div>'+
       animalsManageHtml()+
+      giftCardHtml()+
       '<div class="demo-box">'+
         '<div class="app-eyebrow">Demo nástroje</div>'+
         '<div class="center-mono" style="margin-top:8px;">simulované dnes: '+fmtFull(getNow())+'</div>'+
@@ -895,6 +1189,12 @@
         '<div class="round-btn pressable" data-action="share-shares-plus" data-id="'+s.id+'">'+ICO.plus+'</div>'+
       '</div>'+
       '<div class="pressable" data-action="share-contribute" data-id="'+s.id+'" style="margin-top:10px;"><div class="btn-primary" style="font-size:13.5px;padding:11px;">Koupit '+draft+'× podíl</div></div>';
+    }
+    // can back out and get the money back right up until the farm actually
+    // sends the animal off ("processing" or later) - see the DELETE
+    // .../contribution docstring in routers/meat_shares.py
+    if(s.my_shares > 0 && (s.status==='open' || s.status==='full')){
+      body += '<div class="pressable" data-action="share-cancel" data-id="'+s.id+'" style="margin-top:8px;"><div class="btn-secondary" style="border:1.5px dashed var(--accent);border-radius:4px;color:var(--accent-text);">Zrušit podíl</div></div>';
     }
     body += '</div>';
     return body;
@@ -1279,6 +1579,16 @@
           renderMain();
         }).catch(toastError);
     }
+    else if(action==='share-cancel'){
+      var scId = Number(el.getAttribute('data-id'));
+      if(!window.confirm('Zrušit podíl a vrátit platbu? Nejde to vzít zpět.')) return;
+      api('/meat-shares/'+scId+'/contribution', {method:'DELETE'})
+        .then(function(u){
+          meatShares = meatShares.map(function(x){ return x.id===scId?u:x; });
+          showToasts([{tag:'VRÁCENO', body:'Podíl na „'+u.label+'“ zrušen, platba vrácena.'}]);
+          renderMain();
+        }).catch(toastError);
+    }
 
     // --- settings ---
     else if(action==='amount-minus' || action==='amount-plus'){
@@ -1300,6 +1610,52 @@
       if('Notification' in window){
         try{ Notification.requestPermission().then(function(){ renderSettings(); }); }catch(e){ renderSettings(); }
       } else { renderSettings(); }
+    }
+
+    // --- gift voucher ---
+    else if(action==='gift-open'){
+      giftOpen = true; giftGenerated = false;
+      giftDraft = {recipient:'', gifter:'', amount:20, message:'', code:null};
+      renderSettings();
+    }
+    else if(action==='gift-close'){ giftOpen = false; giftGenerated = false; renderSettings(); }
+    else if(action==='gift-minus'){ syncGiftInputsFromDom(); giftDraft.amount = Math.max(10, giftDraft.amount-5); renderSettings(); }
+    else if(action==='gift-plus'){ syncGiftInputsFromDom(); giftDraft.amount = Math.min(40, giftDraft.amount+5); renderSettings(); }
+    else if(action==='gift-generate'){
+      syncGiftInputsFromDom();
+      giftDraft.recipient = giftDraft.recipient.trim();
+      giftDraft.gifter = giftDraft.gifter.trim();
+      giftDraft.message = giftDraft.message.trim();
+      if(!giftDraft.code){ giftDraft.code = generateVoucherCode(); }
+      giftGenerated = true;
+      renderSettings();
+    }
+    else if(action==='gift-copy'){
+      var certText = giftCertificateText();
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(certText).then(function(){
+          showToasts([{tag:'ZKOPÍROVÁNO', body:'Poukaz je ve schránce, teď ho někam vlož.'}]);
+        }).catch(function(){
+          showToasts([{tag:'CHYBA', body:'Kopírování nevyšlo — text si označ a zkopíruj ručně.', err:true}]);
+        });
+      } else {
+        showToasts([{tag:'INFO', body:'Kopírování prohlížeč nepodporuje — text si označ a zkopíruj ručně.'}]);
+      }
+    }
+    else if(action==='gift-download-pdf'){
+      var pdfBtn = document.getElementById('gift-pdf-btn');
+      if(pdfBtn) pdfBtn.style.opacity = '.6';
+      voucherCanvasDataUrl().then(function(jpegDataUrl){
+        // must match W/H/SCALE inside voucherCanvasDataUrl()
+        var pxW = 842*2, pxH = 595*2;
+        var pdfBytes = buildMinimalPdf(jpegDataUrl, pxW, pxH, 842, 595);
+        var blob = new Blob([pdfBytes], {type:'application/pdf'});
+        downloadBlob(blob, 'mazlik-poukaz-'+(giftDraft.code||'darek').toLowerCase()+'.pdf');
+        if(pdfBtn) pdfBtn.style.opacity = '';
+      }).catch(function(){
+        if(pdfBtn) pdfBtn.style.opacity = '';
+        showToasts([{tag:'CHYBA', body:'PDF se nepodařilo vytvořit — zkus to znovu.', err:true}]);
+      });
     }
 
     // --- payments ---

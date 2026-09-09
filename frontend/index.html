@@ -1772,6 +1772,12 @@
     } else if(s.status==='full' && s.myShares>0){
       body += '<div class="pressable" data-action="share-mark-ready" data-id="'+s.id+'" style="margin-top:10px;"><div class="btn-secondary" style="border:1.5px dashed var(--line);border-radius:4px;">Simulovat zpracování →</div></div>';
     }
+    // same rule as the real backend (routers/meat_shares.py's DELETE
+    // .../contribution): can back out and get the money back right up
+    // until the farm actually sends the animal off ("ready"), not after
+    if(s.myShares > 0 && s.status!=='ready'){
+      body += '<div class="pressable" data-action="share-cancel" data-id="'+s.id+'" style="margin-top:8px;"><div class="btn-secondary" style="border:1.5px dashed var(--accent);border-radius:4px;color:var(--accent-text);">Zrušit podíl</div></div>';
+    }
     body += '</div>';
     return body;
   }
@@ -2006,6 +2012,17 @@
       shareSharesDraft[sId] = 1;
       saveState();
       showToasts([{tag:'PODÍL', body:'Koupeno '+n+'× podíl na „'+s.label+'“ za '+(n*s.priceCzk)+' Kč.'}]);
+      renderAll();
+    }
+    else if(action==='share-cancel'){
+      var scId = el.getAttribute('data-id');
+      var sc = state.meatShares.filter(function(x){ return x.id===scId; })[0];
+      if(!sc || sc.myShares<=0) return;
+      var refund = sc.myShares*sc.priceCzk;
+      sc.status = 'open'; // was 'full' or already 'open' - either way there's room again now
+      sc.myShares = 0;
+      saveState();
+      showToasts([{tag:'VRÁCENO', body:'Podíl na „'+sc.label+'“ zrušen, '+refund+' Kč vráceno.'}]);
       renderAll();
     }
     else if(action==='share-mark-ready'){

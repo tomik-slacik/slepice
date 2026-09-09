@@ -37,6 +37,13 @@ class TopUpResult:
 
 
 @dataclass
+class RefundResult:
+    success: bool
+    provider_reference: str
+    message: str = ""
+
+
+@dataclass
 class SetupIntentResult:
     client_secret: str
     publishable_key: str
@@ -69,6 +76,19 @@ class PaymentProvider(ABC):
         """
         raise NotImplementedError
 
+    @abstractmethod
+    def refund_charge(self, provider_reference: str, amount_czk: int) -> RefundResult:
+        """Reverse a previous charge_saved_method() charge, in full.
+
+        Needed for meat-share contributions (routers/meat_shares.py),
+        which - unlike a hen/animal's wallet - charge one real lump sum up
+        front rather than drawing down a balance daily, so cancelling one
+        means actually giving the money back, not just switching a flag.
+        `provider_reference` is whatever charge_saved_method() returned as
+        its own provider_reference for that original charge.
+        """
+        raise NotImplementedError
+
 
 class MockPaymentProvider(PaymentProvider):
     """Sandbox stand-in used by default. Nothing here touches real money or
@@ -91,6 +111,10 @@ class MockPaymentProvider(PaymentProvider):
     def charge_saved_method(self, provider_customer_id: str, amount_czk: int) -> TopUpResult:
         print(f"[MockPaymentProvider] would charge {provider_customer_id} {amount_czk} Kč for a wallet top-up")
         return TopUpResult(success=True, provider_reference=f"mock-charge-{provider_customer_id}", message="mocked")
+
+    def refund_charge(self, provider_reference: str, amount_czk: int) -> RefundResult:
+        print(f"[MockPaymentProvider] would refund {amount_czk} Kč for charge {provider_reference}")
+        return RefundResult(success=True, provider_reference=f"mock-refund-{provider_reference}", message="mocked")
 
 
 class StripePaymentProvider(PaymentProvider):
@@ -153,6 +177,20 @@ class StripePaymentProvider(PaymentProvider):
             # off-session charge was declined or needs the customer to
             # re-authenticate - the caller is responsible for notifying them
             return TopUpResult(success=False, provider_reference=e.json_body.get("error", {}).get("payment_intent", {}).get("id", ""), message=str(e))
+
+    def refund_charge(self, provider_reference: str, amount_czk: int) -> RefundResult:
+        try:
+            refund = self._stripe.Refund.create(payment_intent=provider_reference, amount=amount_czk * 100)
+            return RefundResult(
+                success=refund.status in ("succeeded", "pending"),
+                provider_reference=refund.id,
+                message=refund.status,
+            )
+        except self._stripe.error.InvalidRequestError as e:
+            # e.g. already refunded, or provider_reference isn't a real
+            # PaymentIntent (shouldn't happen, but a failed refund must
+            # never look like a successful one)
+            return RefundResult(success=False, provider_reference="", message=str(e))
 
 
 def get_payment_provider() -> PaymentProvider:

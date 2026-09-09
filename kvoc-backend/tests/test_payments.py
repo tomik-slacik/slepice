@@ -99,6 +99,31 @@ def test_charge_saved_method_with_no_saved_card_fails_cleanly(stripe_key):
     assert result.success is False
 
 
+def test_refund_charge_passes_payment_intent_and_amount(stripe_key):
+    provider = StripePaymentProvider()
+    with patch("stripe.Refund.create") as create_refund:
+        create_refund.return_value = MagicMock(id="re_123", status="succeeded")
+        result = provider.refund_charge("pi_123", 500)
+
+    _, kwargs = create_refund.call_args
+    assert kwargs["payment_intent"] == "pi_123"
+    # same halere conversion as charge_saved_method - a refund off by 100x
+    # would be just as bad as a charge off by 100x
+    assert kwargs["amount"] == 50000
+    assert result.success is True
+    assert result.provider_reference == "re_123"
+
+
+def test_refund_charge_of_an_already_refunded_payment_fails_cleanly(stripe_key):
+    import stripe as stripe_module
+
+    provider = StripePaymentProvider()
+    with patch("stripe.Refund.create", side_effect=stripe_module.error.InvalidRequestError("already refunded", None)):
+        result = provider.refund_charge("pi_123", 500)
+
+    assert result.success is False
+
+
 def test_provider_selection_defaults_to_mock():
     # KVOC_PAYMENT_PROVIDER is "mock" (or unset) throughout this test suite -
     # see tests/test_api.py, which sets it before app.config is first imported.

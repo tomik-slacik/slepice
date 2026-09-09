@@ -53,9 +53,10 @@ být hotová dřív, než tahle stránka věci — to je normální, ale nezname
       údaj podle GDPR. Potřeba: zásady ochrany osobních údajů (i pro App
       Store/Google Play, viz `APP_STORE_GUIDE.md`), právní titul pro
       zpracování, řešení žádostí o výmaz.
-- [ ] Backend teď nemá autentizaci ani šifrování hesel (žádná hesla
-      zatím neexistují) — než přibudou skuteční uživatelé, tohle je
-      priorita č. 1 z hlediska zabezpečení, ne jen "nice to have".
+- [x] ~~Backend teď nemá autentizaci ani šifrování hesel~~ — už neplatí,
+      `app/auth.py` má bcrypt hesla + JWT tokeny hotové (viz `README.md`).
+      Zůstává: nastavit `KVOC_JWT_SECRET` na pevnou hodnotu při nasazení
+      (`docs/DEPLOYMENT.md`), jinak token po každém restartu přestane platit.
 
 ## 5. Farmáři a logistika
 

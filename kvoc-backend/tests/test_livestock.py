@@ -250,6 +250,72 @@ def test_cannot_contribute_to_a_non_open_share(client):
     assert r.status_code == 409
 
 
+def test_cancel_contribution_refunds_and_reopens_a_full_share(client):
+    r = client.post(
+        "/admin/meat-shares",
+        json={"farm_key": "dvur", "species": "cow", "label": "Zrusitelna Kravicka", "total_shares": 4,
+              "price_per_share_czk": 500},
+        headers=ADMIN_HEADERS,
+    )
+    share_id = r.json()["id"]
+
+    headers_a, _ = _new_user_headers(client)
+    _give_saved_card(client, headers_a)
+    headers_b, _ = _new_user_headers(client)
+    _give_saved_card(client, headers_b)
+
+    client.post(f"/meat-shares/{share_id}/contribute", json={"shares": 1}, headers=headers_a)
+    r = client.post(f"/meat-shares/{share_id}/contribute", json={"shares": 3}, headers=headers_b)
+    assert r.json()["status"] == "full"
+
+    # A cancels their single share - share must reopen (it's no longer
+    # fully taken) and A must show no stake left, without touching B's
+    r = client.delete(f"/meat-shares/{share_id}/contribution", headers=headers_a)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "open"
+    assert r.json()["shares_taken"] == 3
+    assert r.json()["my_shares"] == 0
+
+    r = client.get(f"/meat-shares/{share_id}", headers=headers_b)
+    assert r.json()["my_shares"] == 3
+
+    # someone else can now take the share A gave up
+    headers_c, _ = _new_user_headers(client)
+    _give_saved_card(client, headers_c)
+    r = client.post(f"/meat-shares/{share_id}/contribute", json={"shares": 1}, headers=headers_c)
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "full"
+
+
+def test_cancel_contribution_without_any_stake_is_rejected(client):
+    headers, _ = _new_user_headers(client)
+    shares = client.get("/meat-shares", headers=headers).json()
+    share_id = [s for s in shares if s["label"] == "Kráva Bětka"][0]["id"]
+    r = client.delete(f"/meat-shares/{share_id}/contribution", headers=headers)
+    assert r.status_code == 404
+
+
+def test_cannot_cancel_a_contribution_once_the_share_is_processing_or_later(client):
+    r = client.post(
+        "/admin/meat-shares",
+        json={"farm_key": "dvur", "species": "goat", "label": "Pozde Na Zruseni Koza", "total_shares": 1,
+              "price_per_share_czk": 100},
+        headers=ADMIN_HEADERS,
+    )
+    share_id = r.json()["id"]
+
+    headers, _ = _new_user_headers(client)
+    _give_saved_card(client, headers)
+    client.post(f"/meat-shares/{share_id}/contribute", json={"shares": 1}, headers=headers)
+
+    client.post(f"/admin/meat-shares/{share_id}/mark-ready", json={"total_yield_kg": 10}, headers=ADMIN_HEADERS)
+
+    r = client.delete(f"/meat-shares/{share_id}/contribution", headers=headers)
+    assert r.status_code == 409
+    # rejected cleanly - the contribution (and payout) must still be there
+    assert client.get(f"/meat-shares/{share_id}", headers=headers).json()["my_shares"] == 1
+
+
 def test_meat_share_endpoints_require_admin(client):
     r = client.post(
         "/admin/meat-shares",

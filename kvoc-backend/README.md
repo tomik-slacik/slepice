@@ -8,7 +8,7 @@ umí fungovat bez backendu) teď existuje i **[`app/webapp/`](app/webapp/)**
 data, reálné platby). Otevři `http://127.0.0.1:8000/app/` po spuštění
 backendu níž.
 
-**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 77 testů
+**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 82 testů
 (`pytest`) a k tomu appka `app/webapp/` doopravdy proklikaná v prohlížeči
 (registrace, adopce, všechny záložky, pauza, mock platba, posun dne).
 Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
@@ -54,7 +54,7 @@ Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
   limit (vypnutý ve výchozím stavu, `KVOC_RATE_LIMIT_PER_MINUTE`).
 - **Skutečná validace e-mailu** při registraci (`pydantic[email]`) —
   dřív appka klidně založila účet na "asdf".
-- **Testy**, které se dají spustit, ne jen přečíst (77 testů: API, auth,
+- **Testy**, které se dají spustit, ne jen přečíst (82 testů: API, auth,
   platby, livestock)
 - **`app/webapp/`** — appka opravdu napojená na tohle API (viz výš)
 

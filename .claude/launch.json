@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "mazlik-backend",
+      "runtimeExecutable": "C:/Users/slacik/Documents/slepice/kvoc-backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["C:/Users/slacik/Documents/slepice/kvoc-backend/scripts/preview_server.py"],
+      "port": 8000
+    }
+  ]
+}

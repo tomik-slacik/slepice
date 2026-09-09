@@ -89,3 +89,56 @@ def contribute_to_share(
         f"Koupil sis {payload.shares} podíl(y) na '{share.label}' za {amount_czk} Kč.",
     )
     return to_out(share, current_user)
+
+
+@router.delete("/{share_id}/contribution", response_model=schemas.MeatShareOut)
+def cancel_my_contribution(
+    share_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Undo everything *this* user has contributed to one share and refund
+    it - all-or-nothing, the same granularity as cancelling a hen or animal
+    (DELETE /hens/{id}, DELETE /animals/{id}), not a "give back just one of
+    my shares" partial refund.
+
+    Only while the share hasn't moved past taking contributions: once it's
+    `processing` or later the farm already committed the real animal for
+    slaughter on the strength of what was pledged, so a refund past that
+    point isn't offered. Returns the updated share (unlike the hen/animal
+    DELETEs, which return 204) because the share itself still exists -
+    only this user's stake in it is gone.
+    """
+    share = db.get(models.MeatShare, share_id)
+    if share is None:
+        raise HTTPException(404, "meat share not found")
+    if share.status not in ("open", "full"):
+        raise HTTPException(409, f"'{share.label}' is already {share.status} - too late to cancel a contribution")
+
+    mine = [c for c in share.contributions if c.user_id == current_user.id]
+    if not mine:
+        raise HTTPException(404, "you have no contribution on this share")
+
+    provider = get_payment_provider()
+    refunded_czk = 0
+    # refund+delete one at a time (not all-refund-then-all-delete) so a
+    # failure partway through never leaves a contribution refunded in
+    # Stripe but still showing as active here
+    for contribution in mine:
+        result = provider.refund_charge(contribution.provider_reference, contribution.amount_czk)
+        if not result.success:
+            db.commit()
+            raise HTTPException(402, f"refund failed: {result.message}")
+        refunded_czk += contribution.amount_czk
+        db.delete(contribution)
+
+    if share.status == "full":
+        share.status = "open"
+    db.commit()
+    db.refresh(share)
+
+    get_notification_provider().send(
+        share.id, current_user.fcm_token, "VRÁCENO",
+        f"Podíl na '{share.label}' zrušen, {refunded_czk} Kč vráceno.",
+    )
+    return to_out(share, current_user)

@@ -64,6 +64,12 @@ zátěž o dost vyšší a liší se produkt od produktu:
 - `GET/POST /meat-shares`, `POST /meat-shares/{id}/contribute` — koupě
   podílu skutečně strhne platbu (stejný mock/Stripe vzor jako peněženka u
   slepiček), odmítne přeplnění, odmítne příspěvek do už uzavřeného chovu.
+- `DELETE /meat-shares/{id}/contribution` — zrušení vlastního podílu vrátí
+  peníze (skutečný refund přes stejného payment providera, ne jen smazání
+  záznamu) a uvolní místo pro někoho jiného, pokud tím chov přestal být
+  plný. Jde to jen dokud chov ještě bere příspěvky (`open`/`full`) — jakmile
+  farma zvíře reálně pošle na zpracování, appka refundovat přestane
+  nabízet, protože to už by neodpovídalo realitě.
 - `POST /admin/meat-shares` (založení), `POST /admin/meat-shares/{id}/mark-ready`
   (zápis skutečného výtěžku, rozpočítání a notifikace každému
   přispěvateli podle jeho podílu — ověřeno testem na přesných číslech, ne
@@ -77,7 +83,8 @@ zátěž o dost vyšší a liší se produkt od produktu:
   adopce se založí a denní tik běží, ale nic zatím nestrhává skutečné
   peníze za mléko/vlnu samo o sobě. Doplnění je přímočaré (stejný vzor
   jako `routers/wallet.py`), jen to v tomhle kole nebylo hotové.
-- **Offline demo appka a mobilní appky** o tomhle vůbec nevědí — tahle
-  práce je jen v `kvoc-backend`. Frontend pro výběr druhu/produktu a
-  procházení podílů na maso by byl další krok.
+- ~~Offline demo appka a mobilní appky o tomhle vůbec nevědí~~ — už neplatí,
+  obě frontendové varianty (`frontend/index.html` i skutečná webappka
+  `app/webapp/index.html`, a jejich mobilní kopie) mají výběr druhu/produktu
+  i procházení a nákup podílů na maso hotové.
 - Žádné odznaky/doplňky/grafika pro kozy/ovce/krávy — jen backend.
