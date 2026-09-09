@@ -33,6 +33,17 @@ services:
         fromDatabase:
           name: kvoc-db
           property: connectionString
+      # Without this, /admin/* (admin.html, and the daily-tick GitHub
+      # Actions workflow - see .github/workflows/daily-tick.yml) is
+      # completely unreachable on the deployed instance, not just
+      # unauthenticated (see auth.py's require_admin - an empty
+      # KVOC_ADMIN_TOKEN always refuses the shared-token path). Render
+      # generates a real random value; find it after deploying under this
+      # service's Environment tab and reuse it both to log into
+      # /static/admin.html and as the daily-tick workflow's
+      # KVOC_ADMIN_TOKEN GitHub secret - same value, two places it's needed.
+      - key: KVOC_ADMIN_TOKEN
+        generateValue: true
       - key: KVOC_PAYMENT_PROVIDER
         value: mock
       - key: KVOC_CORS_ORIGINS

@@ -68,10 +68,16 @@ skutečnou cenu v Renderově rozhraní, než potvrdíš, ceny se mění).
    - databázi `kvoc-db` (Postgres, placený tarif — viz výš)
 4. Potvrď (**Apply**) — tohle je krok, který stojí peníze (měsíční
    předplatné databáze), zkontroluj cenu, než klikneš. `KVOC_JWT_SECRET`
-   se vygeneruje automaticky, `KVOC_DATABASE_URL` se propojí na databázi
-   automaticky.
+   a `KVOC_ADMIN_TOKEN` se vygenerují automaticky, `KVOC_DATABASE_URL`
+   se propojí na databázi automaticky.
 5. Až appka naběhne, dostaneš adresu typu `https://kvoc-api.onrender.com`.
    Appka na `/app/` a dokumentace na `/docs` fungují stejně jako lokálně.
+6. Vygenerovaný `KVOC_ADMIN_TOKEN` najdeš v Renderově dashboardu u
+   `kvoc-api` služby → záložka **Environment**. Budeš ho potřebovat na
+   dvou místech: přihlášení do `/static/admin.html`, a jako
+   `KVOC_ADMIN_TOKEN` GitHub secret pro
+   [`daily-tick.yml`](../../.github/workflows/daily-tick.yml) (spolu s
+   `KVOC_API_URL` = adresou appky z kroku 5) — viz "Co si pohlídat" níž.
 
 ## Cesta B: Railway / Fly.io / cokoliv jiného s Dockerem
 
@@ -98,7 +104,7 @@ Docker image. Obecný postup:
 | `KVOC_FIREBASE_CREDENTIALS_JSON` | Jen pro `fcm` | Viz `NOTIFICATIONS.md`. |
 | `KVOC_EMAIL_PROVIDER` | Ne | `console` (výchozí) nebo `smtp`. Viz `EMAIL.md`. |
 | `KVOC_SMTP_HOST/PORT/USERNAME/PASSWORD`, `KVOC_EMAIL_FROM` | Jen pro `smtp` | Viz `EMAIL.md`. |
-| `KVOC_ADMIN_TOKEN` | Ne (ale bez něj a bez `is_admin` účtu je `/admin/*` úplně nedostupné) | Viz `ADMIN.md`. |
+| `KVOC_ADMIN_TOKEN` | Ne (ale bez něj a bez `is_admin` účtu je `/admin/*` úplně nedostupné) | Viz `ADMIN.md`. Na Renderu `render.yaml` tohle vygeneruje automaticky - viz krok 6 výš. |
 
 ## Co si pohlídat
 
