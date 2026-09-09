@@ -305,6 +305,29 @@ class AnimalPausedDay(Base):
     animal = relationship("Animal", back_populates="paused_days")
 
 
+class AnimalWalletTopUp(Base):
+    """Animal-side twin of WalletTopUp - was the one honestly-documented gap
+    left in docs/LIVESTOCK.md ("Animal nema vlastni platebni tok"): adopting
+    an animal and running the daily tick worked, but nothing actually
+    charged real money for it yet. Same shape, same reasoning (see
+    WalletTopUp's docstring and docs/PAYMENT_INTEGRATION.md) - a real charge
+    happens here in bulk (weekly/monthly), the daily tick only ever draws
+    down against it.
+    """
+
+    __tablename__ = "animal_wallet_topups"
+
+    id = Column(Integer, primary_key=True)
+    animal_id = Column(Integer, ForeignKey("animals.id"), nullable=False, index=True)
+    amount_czk = Column(Integer, nullable=False)
+    provider = Column(String, nullable=False)  # "mock" | "stripe"
+    provider_reference = Column(String, nullable=False)
+    status = Column(String, nullable=False)  # "succeeded" | "failed"
+    created_at = Column(DateTime, default=lambda: dt.datetime.now(dt.timezone.utc))
+
+    animal = relationship("Animal")
+
+
 class MeatShare(Base):
     """A single real animal being raised for meat (optionally + hide),
     funded by several customers pooling contributions instead of one

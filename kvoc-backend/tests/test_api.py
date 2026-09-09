@@ -191,6 +191,27 @@ def test_login_wrong_password_rejected(client):
     assert r.status_code == 401
 
 
+def test_login_against_a_malformed_stored_hash_fails_cleanly_not_500(client):
+    # verify_password() catches bcrypt's ValueError (models.User.password_hash
+    # isn't a real bcrypt hash - shouldn't happen via the app's own register
+    # flow, but a bad direct DB edit or a future migration bug is a real way
+    # this could occur) - must look like "wrong password", not crash the request
+    email = "malformed-hash@example.com"
+    db = SessionLocal()
+    try:
+        db.add(models.User(email=email, password_hash="not-a-real-bcrypt-hash"))
+        db.commit()
+    finally:
+        db.close()
+    r = client.post("/auth/login", data={"username": email, "password": "anything"})
+    assert r.status_code == 401
+
+
+def test_a_garbage_bearer_token_is_rejected_cleanly_not_500(client):
+    r = client.get("/auth/me", headers={"Authorization": "Bearer not-a-real-jwt-at-all"})
+    assert r.status_code == 401
+
+
 def test_duplicate_registration_rejected(client):
     _, email = _new_user_headers(client)
     r = client.post("/auth/register", json={"email": email, "password": "another password entirely"})
@@ -622,6 +643,28 @@ def test_admin_endpoints_refuse_without_credentials(client):
     assert r.status_code == 403
 
 
+def test_admin_access_also_works_via_an_is_admin_account_not_just_the_shared_token(client):
+    # the second of the two independent ways into require_admin (see
+    # docs/ADMIN.md) - every other admin test in this file uses
+    # ADMIN_HEADERS (the shared X-Admin-Token), so this path had never
+    # actually been exercised by a test despite being the documented way
+    # to give more than one real person admin access
+    headers, email = _new_user_headers(client)
+    r = client.get("/admin/stats", headers=headers)
+    assert r.status_code == 403  # not an admin yet - own login token alone isn't enough
+
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.email == email).first()
+        user.is_admin = True
+        db.commit()
+    finally:
+        db.close()
+
+    r = client.get("/admin/stats", headers=headers)
+    assert r.status_code == 200  # same bearer token, now works - no re-login needed
+
+
 def test_admin_endpoints_refuse_wrong_token(client):
     r = client.get("/admin/stats", headers={"X-Admin-Token": "not-the-real-token"})
     assert r.status_code == 403
@@ -643,6 +686,24 @@ def test_admin_stats_reflect_real_data(client):
     assert s["active_animals"] + s["paused_animals"] == s["total_animals"]
     assert s["open_meat_shares"] <= s["total_meat_shares"]
     assert s["meat_share_revenue_total_czk"] >= 0
+
+
+def test_admin_stats_include_animal_wallet_revenue(client):
+    # animal_wallet.py closed the "Animal has no wallet topup flow" gap
+    # (docs/LIVESTOCK.md) - /admin/stats went stale again the same way it
+    # did for the rest of other-livestock the first time, see the comment
+    # in admin.py's get_stats(); this is the regression test for that
+    before = client.get("/admin/stats", headers=ADMIN_HEADERS).json()
+
+    headers, _ = _new_user_headers(client)
+    r = client.post("/animals", json={"species": "cow", "product": "milk", "farm_key": "lipa"}, headers=headers)
+    animal_id = r.json()["id"]
+    client.post(f"/animals/{animal_id}/wallet/setup-intent", headers=headers)
+    client.post(f"/animals/{animal_id}/wallet/topup", json={"amount_czk": 77}, headers=headers)
+
+    after = client.get("/admin/stats", headers=ADMIN_HEADERS).json()
+    assert after["animal_wallet_revenue_total_czk"] == before["animal_wallet_revenue_total_czk"] + 77
+    assert after["failed_animal_topups"] == before["failed_animal_topups"]  # this one succeeded
 
 
 def test_admin_can_list_users_and_farms(client):

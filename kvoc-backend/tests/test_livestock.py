@@ -426,3 +426,156 @@ def test_delivery_route_mixes_hens_and_animals_on_one_farm(client):
 
     goat_stop = [s for s in stops if s["kind"] == "animal" and s["id"] == goat["id"]][0]
     assert goat_stop["name"] == "Koza"  # no custom name given above - species label fallback
+
+
+# ---------------------------- admin: edit an animal on a user's behalf ----------------------------
+# PATCH /admin/animals/{id} (docs/ADMIN.md) - the animal-side twin of
+# test_api.py's test_admin_can_view_and_edit_a_users_hen, which only ever
+# covered the hen version even though admin.html's Detail panel and
+# adminToggleAnimalPause() call this exact endpoint for animals too.
+
+def test_admin_can_edit_a_users_animal(client):
+    headers, _ = _new_user_headers(client)
+    r = client.post(
+        "/animals",
+        json={"species": "goat", "product": "milk", "name": "Koza Rozárka", "farm_key": "dvur"},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    animal = r.json()
+
+    r = client.patch(f"/admin/animals/{animal['id']}", json={"paused": True}, headers=ADMIN_HEADERS)
+    assert r.status_code == 200, r.text
+    assert r.json()["paused"] is True
+
+    # the owner sees the change too - same row, not a shadow copy
+    r = client.get(f"/animals/{animal['id']}", headers=headers)
+    assert r.json()["paused"] is True
+
+    r = client.patch("/admin/animals/99999999", json={"paused": True}, headers=ADMIN_HEADERS)
+    assert r.status_code == 404
+
+
+def test_admin_update_animal_requires_admin(client):
+    headers, _ = _new_user_headers(client)
+    r = client.post(
+        "/animals",
+        json={"species": "cow", "product": "milk", "farm_key": "lipa"},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    animal = r.json()
+    r = client.patch(f"/admin/animals/{animal['id']}", json={"paused": True})
+    assert r.status_code == 403
+
+
+# ---------------------------- animal wallet top-ups ----------------------------
+# POST /animals/{id}/wallet/topup (and setup-intent, topups) - the animal
+# side of routers/wallet.py, closing the one honestly-documented gap in
+# docs/LIVESTOCK.md ("Animal nema vlastni platebni tok"). Mirrors
+# test_api.py's hen-wallet tests closely on purpose - same behavior, same
+# guarantees, just for an Animal instead of a Hen.
+
+def _adopt_animal(client, headers, species="cow", product="milk", farm_key="lipa", daily_amount=20):
+    r = client.post(
+        "/animals",
+        json={"species": species, "product": product, "farm_key": farm_key, "daily_amount": daily_amount},
+        headers=headers,
+    )
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_animal_setup_intent_works_for_an_account_with_only_an_animal_no_hen_at_all(client):
+    # the whole reason this endpoint exists separately from
+    # /hens/{hen_id}/wallet/setup-intent rather than reusing it - an
+    # account with no hen has no hen_id to call that version on
+    headers, _ = _new_user_headers(client)
+    animal = _adopt_animal(client, headers)
+
+    r = client.post(f"/animals/{animal['id']}/wallet/setup-intent", headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["client_secret"]
+
+    r = client.get("/auth/me", headers=headers)
+    assert r.json()["has_saved_payment_method"] is True
+
+
+def test_animal_wallet_topup_flow_with_mock_provider(client):
+    headers, _ = _new_user_headers(client)
+    animal = _adopt_animal(client, headers)
+    animal_id = animal["id"]
+
+    client.post(f"/animals/{animal_id}/wallet/setup-intent", headers=headers)
+
+    r = client.post(f"/animals/{animal_id}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 201, r.text
+    topup = r.json()
+    assert topup["amount_czk"] == 100
+    assert topup["status"] == "succeeded"
+    assert topup["provider"] == "mock"
+
+    r = client.get(f"/animals/{animal_id}/wallet/topups", headers=headers)
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+
+
+def test_animal_topup_without_saved_card_is_rejected(client):
+    headers, _ = _new_user_headers(client)
+    animal = _adopt_animal(client, headers)
+    r = client.post(f"/animals/{animal['id']}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 400
+
+
+def test_failed_animal_topup_auto_pauses_and_successful_one_resumes_it(client):
+    from unittest.mock import patch
+
+    from app.integrations.payments import TopUpResult
+
+    headers, _ = _new_user_headers(client)
+    animal = _adopt_animal(client, headers)
+    animal_id = animal["id"]
+    client.post(f"/animals/{animal_id}/wallet/setup-intent", headers=headers)
+
+    with patch(
+        "app.integrations.payments.MockPaymentProvider.charge_saved_method",
+        return_value=TopUpResult(success=False, provider_reference="mock-fail", message="card declined"),
+    ):
+        r = client.post(f"/animals/{animal_id}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 402
+
+    r = client.get(f"/animals/{animal_id}", headers=headers)
+    assert r.json()["paused"] is True
+
+    # a real (unpatched, mock-succeeding) top-up should resume it again
+    r = client.post(f"/animals/{animal_id}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 201
+    r = client.get(f"/animals/{animal_id}", headers=headers)
+    assert r.json()["paused"] is False
+
+
+def test_successful_animal_topup_never_resumes_a_manually_paused_animal(client):
+    headers, _ = _new_user_headers(client)
+    animal = _adopt_animal(client, headers)
+    animal_id = animal["id"]
+    client.post(f"/animals/{animal_id}/wallet/setup-intent", headers=headers)
+
+    client.patch(f"/animals/{animal_id}", json={"paused": True}, headers=headers)
+    r = client.post(f"/animals/{animal_id}/wallet/topup", json={"amount_czk": 100}, headers=headers)
+    assert r.status_code == 201
+
+    r = client.get(f"/animals/{animal_id}", headers=headers)
+    assert r.json()["paused"] is True  # a top-up succeeding doesn't override a deliberate pause
+
+
+def test_animal_wallet_endpoints_are_isolated_between_users(client):
+    headers_a, _ = _new_user_headers(client)
+    headers_b, _ = _new_user_headers(client)
+    animal = _adopt_animal(client, headers_a)
+
+    r = client.post(f"/animals/{animal['id']}/wallet/setup-intent", headers=headers_b)
+    assert r.status_code == 404
+    r = client.post(f"/animals/{animal['id']}/wallet/topup", json={"amount_czk": 100}, headers=headers_b)
+    assert r.status_code == 404
+    r = client.get(f"/animals/{animal['id']}/wallet/topups", headers=headers_b)
+    assert r.status_code == 404

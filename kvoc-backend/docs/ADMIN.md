@@ -27,8 +27,9 @@ bývalo v `app/routers/admin.py` a teď je vyřešené).
 ## Co admin přehled umí
 
 - **Přehled** — počet účtů, slepiček, aktivní/pozastavené, celkové tržby,
-  počet neúspěšných plateb, a totéž pro ostatní zvířata a sdílené chovy
-  na maso (`docs/LIVESTOCK.md`), plus **trend za posledních 14 dní**
+  počet neúspěšných plateb, a totéž pro ostatní zvířata (vlastní tržby a
+  neúspěšné platby, `animal_wallet.py`) a sdílené chovy na maso
+  (`docs/LIVESTOCK.md`), plus **trend za posledních 14 dní**
   (nových účtů a tržeb za den, `GET /admin/stats/timeseries?days=`) —
   malý sloupcový graf pod dlaždicemi, ne jen aktuální čísla.
 - **Farmy** — seznam s obsazeností, formulář na přidání skutečné farmy

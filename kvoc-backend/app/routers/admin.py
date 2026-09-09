@@ -58,6 +58,22 @@ def get_stats(db: Session = Depends(get_db)):
     open_meat_shares = db.query(func.count(models.MeatShare.id)).filter(models.MeatShare.status == "open").scalar()
     meat_share_revenue_total = db.query(func.coalesce(func.sum(models.ShareContribution.amount_czk), 0)).scalar()
 
+    # animal_wallet.py (docs/LIVESTOCK.md's other honestly-documented gap,
+    # closed in the same pass) - own line item, not folded into
+    # revenue_total_czk above, same reasoning as meat_share_revenue_total_czk
+    # having its own line instead of silently changing what an existing
+    # field already means to callers
+    animal_wallet_revenue_total = (
+        db.query(func.coalesce(func.sum(models.AnimalWalletTopUp.amount_czk), 0))
+        .filter(models.AnimalWalletTopUp.status == "succeeded")
+        .scalar()
+    )
+    failed_animal_topups = (
+        db.query(func.count(models.AnimalWalletTopUp.id))
+        .filter(models.AnimalWalletTopUp.status == "failed")
+        .scalar()
+    )
+
     return {
         "total_users": total_users,
         "total_hens": total_hens,
@@ -68,6 +84,8 @@ def get_stats(db: Session = Depends(get_db)):
         "total_animals": total_animals,
         "active_animals": active_animals,
         "paused_animals": total_animals - active_animals,
+        "animal_wallet_revenue_total_czk": animal_wallet_revenue_total,
+        "failed_animal_topups": failed_animal_topups,
         "total_meat_shares": total_meat_shares,
         "open_meat_shares": open_meat_shares,
         "meat_share_revenue_total_czk": meat_share_revenue_total,
@@ -113,12 +131,17 @@ def get_stats_timeseries(days: int = 14, db: Session = Depends(get_db)):
         .filter(models.WalletTopUp.status == "succeeded", models.WalletTopUp.created_at >= since)
         .all()
     )
+    animal_topups = (
+        db.query(models.AnimalWalletTopUp.created_at, models.AnimalWalletTopUp.amount_czk)
+        .filter(models.AnimalWalletTopUp.status == "succeeded", models.AnimalWalletTopUp.created_at >= since)
+        .all()
+    )
     contributions = (
         db.query(models.ShareContribution.created_at, models.ShareContribution.amount_czk)
         .filter(models.ShareContribution.created_at >= since)
         .all()
     )
-    for created_at, amount in [*topups, *contributions]:
+    for created_at, amount in [*topups, *animal_topups, *contributions]:
         b = _bucket_for(created_at)
         if b:
             b["revenue_czk"] += amount

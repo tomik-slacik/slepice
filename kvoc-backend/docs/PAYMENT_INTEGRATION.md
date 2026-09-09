@@ -47,6 +47,10 @@ patří na dva jasně oddělená místa:
    (Stripe testovací číslo `4242 4242 4242 4242`, libovolné datum/CVC).
 5. Zavolej `POST /hens/{id}/wallet/topup` s částkou — appka strhne
    uloženou kartu doopravdy (v testovacím režimu, žádné skutečné peníze).
+   Stejně to funguje i pro ostatní zvířata (`POST /animals/{id}/wallet/topup`,
+   `app/routers/animal_wallet.py`, viz `docs/LIVESTOCK.md`) — stejná
+   peněženka, stejný `PaymentProvider`, jen jiná tabulka na pozadí
+   (`AnimalWalletTopUp` místo `WalletTopUp`).
 
 ## Kam sáhnout pro jinou bránu (GoPay, Comgate)
 

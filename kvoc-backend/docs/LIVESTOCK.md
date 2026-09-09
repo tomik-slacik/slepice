@@ -76,15 +76,21 @@ zátěž o dost vyšší a liší se produkt od produktu:
   jen že "nespadne").
 - Denní tik (`/admin/run-tick` i skutečný scheduler) běží pro zvířata
   stejně jako pro slepičky, ve stejném volání.
+- `POST /animals/{id}/wallet/topup` (+ `.../setup-intent`, `.../topups`,
+  `app/routers/animal_wallet.py`) — `Animal` má teď vlastní platební tok,
+  stejný mock/Stripe vzor a stejné auto-pauza/obnovení chování při
+  neúspěšné platbě jako slepičky (`routers/wallet.py`). Vlastní
+  `setup-intent` endpoint navíc (ne jen sdílení toho hesního) — účet jen
+  se zvířaty, bez jediné slepičky, by jinak neměl žádné `hen_id`, přes
+  které by se ke kartě vůbec dostal.
 
 ## Co je poctivě nehotové
 
-- **`Animal` nemá vlastní platební tok** (žádné `.../wallet/topup`) —
-  adopce se založí a denní tik běží, ale nic zatím nestrhává skutečné
-  peníze za mléko/vlnu samo o sobě. Doplnění je přímočaré (stejný vzor
-  jako `routers/wallet.py`), jen to v tomhle kole nebylo hotové.
-- ~~Offline demo appka a mobilní appky o tomhle vůbec nevědí~~ — už neplatí,
-  obě frontendové varianty (`frontend/index.html` i skutečná webappka
-  `app/webapp/index.html`, a jejich mobilní kopie) mají výběr druhu/produktu
-  i procházení a nákup podílů na maso hotové.
+- **`app/webapp/index.html` (skutečná appka) nemá UI pro platbu za
+  zvíře** — `animalsManageHtml()` umí jméno/pauzu/částku, ale žádnou
+  sekci "Platba"/"Dobít peněženku" jako slepička v Nastavení
+  (`renderPaymentSection()`, viz výš) — ta je zatím napevno navázaná jen
+  na aktivní slepičku. Backend (viz výš) je hotový a otestovaný, jde
+  zavolat z `/docs` nebo přímo z API - jen appka to zatím nenabízí
+  klikací cestou.
 - Žádné odznaky/doplňky/grafika pro kozy/ovce/krávy — jen backend.

@@ -8,7 +8,7 @@ umí fungovat bez backendu) teď existuje i **[`app/webapp/`](app/webapp/)**
 data, reálné platby). Otevři `http://127.0.0.1:8000/app/` po spuštění
 backendu níž.
 
-**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 87 testů
+**Bylo to opravdu spuštěné a otestované**, ne jen napsané — 105 testů
 (`pytest`) a k tomu appka `app/webapp/` doopravdy proklikaná v prohlížeči
 (registrace, adopce, všechny záložky, pauza, mock platba, posun dne).
 Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
@@ -54,7 +54,7 @@ Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
   limit (vypnutý ve výchozím stavu, `KVOC_RATE_LIMIT_PER_MINUTE`).
 - **Skutečná validace e-mailu** při registraci (`pydantic[email]`) —
   dřív appka klidně založila účet na "asdf".
-- **Testy**, které se dají spustit, ne jen přečíst (87 testů: API, auth,
+- **Testy**, které se dají spustit, ne jen přečíst (105 testů: API, auth,
   platby, livestock)
 - **`app/webapp/`** — appka opravdu napojená na tohle API (viz výš)
 
@@ -65,10 +65,11 @@ Obojí odhalilo reálné chyby, které by psaní naslepo nechytilo:
   ostrý provoz) nikam doopravdy neteče. Viz `PAYMENT_INTEGRATION.md`.
 - **Skutečné push notifikace.** Zatím se jen vypisují do konzole —
   napojení Firebase/APNs je popsané v `app/integrations/notifications.py`.
-- **Appka doopravdy v App Store / Google Play.** `mobile-app/` sestaví
-  Android projekt až na jeden krok (Android SDK, viz jeho README); iOS
-  potřebuje Mac. Návod na zbytek cesty (účty, review) je v
-  [`docs/APP_STORE_GUIDE.md`](docs/APP_STORE_GUIDE.md).
+- **Appka doopravdy v App Store / Google Play.** Android build (`.apk`/
+  `.aab`) je technicky hotový a odzkoušený (`mobile-app/README.md`);
+  iOS potřebuje Mac (nebo cloudové CI, `codemagic.yaml` je připravený).
+  Chybí jen účty a store listing (App Store Connect/Play Console review)
+  — návod v [`docs/APP_STORE_GUIDE.md`](docs/APP_STORE_GUIDE.md).
 - **Appka běžící někde jinde než na tomhle počítači.** `127.0.0.1` vidí
   jen tenhle stroj — pro sdílení s kýmkoliv jiným je potřeba skutečné
   nasazení. `Dockerfile` a `render.yaml` na to jsou připravené a
@@ -132,6 +133,13 @@ nahoře přijme email/heslo přímo tam.
 pytest -v
 ```
 
+S přehledem pokrytí (`pytest-cov`, viz `requirements.txt`) - kde přesně
+ještě chybí test na reálnou větev kódu, ne jen "kolik testů prošlo":
+
+```bash
+pytest --cov=app --cov-report=term-missing
+```
+
 ## Struktura projektu
 
 ```
@@ -150,7 +158,8 @@ app/
     payments.py                        — MockPaymentProvider + funkční StripePaymentProvider
     notifications.py                    — ConsoleNotificationProvider + kam zapojit FCM/APNs
   routers/
-    auth.py, farms.py, hens.py, wallet.py, animals.py, meat_shares.py, admin.py   — HTTP endpointy
+    auth.py, farms.py, hens.py, wallet.py, animals.py, animal_wallet.py,
+    meat_shares.py, admin.py                                             — HTTP endpointy
   static/
     card-setup.html                                        — holá testovací stránka pro uložení karty (Stripe.js)
     admin.html                                               — jednoduchý admin přehled (X-Admin-Token)

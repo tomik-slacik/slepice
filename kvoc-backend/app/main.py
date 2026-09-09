@@ -31,7 +31,7 @@ from . import config, models  # noqa: F401  (models import registers them on Bas
 from .database import SessionLocal, get_db, init_db
 from .logging_setup import setup_logging
 from .middleware import RateLimitMiddleware, RequestLoggingMiddleware
-from .routers import admin, animals, auth, farms, hens, meat_shares, wallet
+from .routers import admin, animal_wallet, animals, auth, farms, hens, meat_shares, wallet
 from .scheduler import start_scheduler, stop_scheduler
 from .seed import seed_animal_offerings, seed_farms, seed_meat_shares
 
@@ -86,6 +86,7 @@ app.include_router(farms.router)
 app.include_router(hens.router)
 app.include_router(wallet.router)
 app.include_router(animals.router)
+app.include_router(animal_wallet.router)
 app.include_router(meat_shares.router)
 app.include_router(admin.router)
 

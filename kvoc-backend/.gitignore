@@ -6,3 +6,6 @@ venv/
 .env
 .pytest_cache/
 logs/
+.coverage
+.coverage.*
+htmlcov/

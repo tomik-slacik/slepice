@@ -2,10 +2,13 @@
 
 **Aktuální stav (odzkoušeno, ne jen naplánováno):** varianta A níže je už
 rozjetá v [`../../mobile-app/`](../../mobile-app/) — skutečný Capacitor
-projekt s vygenerovaným Android Gradle projektem, který úspěšně proběhne
-přes `./gradlew tasks`. Chybí jediná věc: Android SDK (viz
-[`mobile-app/README.md`](../../mobile-app/README.md) pro přesný další
-krok). iOS jde odsud dál jen po instalaci na Macu — víc v tom README.
+projekt, kde `./gradlew assembleDebug` i `bundleRelease` doopravdy
+proběhly a vyrobily instalovatelné `.apk`/podepsaný `.aab` (Android SDK
+je stažený přenosně do `.tools/`, viz
+[`mobile-app/README.md`](../../mobile-app/README.md) pro detaily) —
+technicky hotovo, zbývá jen Google Play Console účet a store listing
+(taky v tom README). iOS jde odsud dál jen po instalaci na Macu (nebo
+cloudové CI, `../../codemagic.yaml` je připravený) — víc v tom README.
 
 Ceny a přesná pravidla obchodů se v čase mění — než začneš platit, ověř si
 aktuální podmínky přímo na developer.apple.com a play.google.com/console.
