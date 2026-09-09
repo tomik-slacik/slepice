@@ -55,6 +55,9 @@
   .detail-box .sub-h{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;color:var(--ink-soft);margin:10px 0 4px;}
   .route-stop{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;}
   .route-stop:last-child{border-bottom:none;}
+  .pager{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .pager button:disabled{opacity:.4;cursor:default;}
+  .pager input[type=number]{margin-bottom:0;}
 </style>
 </head>
 <body>
@@ -101,7 +104,12 @@
     <div class="card">
       <h2>Uživatelé <span id="users-count" class="mono" style="font-weight:400;font-size:13px;"></span></h2>
       <table id="users-table"><thead><tr><th>E-mail</th><th>Slepičky</th><th>Karta</th><th>Založeno</th><th></th></tr></thead><tbody></tbody></table>
-      <div class="mono" style="margin-top:8px;font-size:12px;color:#666;">Prvních 100 (nejnovější) - <code>GET /admin/users?offset=100</code> pro další.</div>
+      <div class="pager">
+        <button class="small secondary" id="users-prev" onclick="usersPage(-1)">◀ Předchozí</button>
+        <span class="mono" id="users-page-label" style="font-size:11.5px;color:var(--ink-soft);"></span>
+        <button class="small secondary" id="users-next" onclick="usersPage(1)">Další ▶</button>
+        <span class="mono" style="font-size:11.5px;color:var(--ink-soft);margin-left:auto;">na stránku <input type="number" id="users-limit" value="20" min="1" max="500" onchange="usersPage(0)" style="width:52px;display:inline-block;margin:0;padding:3px 5px;"></span>
+      </div>
       <div class="detail-box hidden" id="user-detail"></div>
     </div>
   </div>
@@ -156,15 +164,41 @@
     }).join('');
   }
 
+  // ---------------------------- users pagination ----------------------------
+  // GET /admin/users returns {total, limit, offset, users: [...]} (paginated
+  // in admin.py so an unbounded SELECT * never has to run) - this is the
+  // client side of actually using that instead of only ever showing page 1.
+  var usersOffset = 0;
+
   function renderUsers(page){
-    // GET /admin/users now returns {total, limit, offset, users: [...]}
-    // (paginated - see admin.py), not a bare array
+    usersOffset = page.offset;
     document.getElementById('users-count').textContent = '('+page.users.length+' z '+page.total+')';
-    document.querySelector('#users-table tbody').innerHTML = page.users.map(function(u){
+    document.querySelector('#users-table tbody').innerHTML = page.users.length ? page.users.map(function(u){
       return '<tr><td>'+u.email+'</td><td>'+u.hen_count+'</td><td>'+(u.has_saved_payment_method?'ano':'ne')+'</td><td class="mono">'+(u.created_at||'').slice(0,10)+'</td>'+
         '<td class="actions"><button class="small secondary" onclick="showUserDetail('+u.id+')">Detail</button></td></tr>';
-    }).join('');
+    }).join('') : '<tr><td colspan="5" class="mono" style="color:var(--ink-soft);">Žádní další uživatelé.</td></tr>';
+
+    var lastPage = page.total===0 ? 1 : Math.ceil(page.total/page.limit);
+    var curPage = Math.floor(page.offset/page.limit) + 1;
+    document.getElementById('users-page-label').textContent = 'stránka '+curPage+' z '+lastPage;
+    document.getElementById('users-prev').disabled = page.offset<=0;
+    document.getElementById('users-next').disabled = page.offset+page.users.length>=page.total;
   }
+
+  function loadUsersPage(offset){
+    var limit = Math.max(1, Math.min(500, Number(document.getElementById('users-limit').value)||20));
+    return api('/admin/users?limit='+limit+'&offset='+Math.max(0, offset)).then(renderUsers);
+  }
+
+  // direction: -1 previous page, +1 next page, 0 re-fetch the current
+  // offset with whatever the "na stránku" input now says (its onchange
+  // handler calls this) - clamped so a bigger page size can't leave the
+  // offset pointing past the new last page
+  window.usersPage = function(direction){
+    var limit = Math.max(1, Math.min(500, Number(document.getElementById('users-limit').value)||20));
+    var next = direction===0 ? usersOffset : usersOffset + direction*limit;
+    loadUsersPage(Math.max(0, next)).catch(function(e){ alert(e.message); });
+  };
 
   function renderTimeseries(ts){
     var series = ts.series;
@@ -288,10 +322,12 @@
   function load(){
     var gateErr = document.getElementById('gate-err');
     gateErr.textContent = '';
-    Promise.all([api('/admin/stats'), api('/admin/farms'), api('/admin/users'), api('/admin/stats/timeseries')]).then(function(r){
+    // reuses whatever page the Uživatelé table is already on (usersOffset) -
+    // so pausing/deleting someone from page 3 doesn't bounce back to page 1
+    Promise.all([api('/admin/stats'), api('/admin/farms'), loadUsersPage(usersOffset), api('/admin/stats/timeseries')]).then(function(r){
       document.getElementById('gate').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
-      renderStats(r[0]); renderFarms(r[1]); renderUsers(r[2]); renderTimeseries(r[3]);
+      renderStats(r[0]); renderFarms(r[1]); renderTimeseries(r[3]);
     }).catch(function(e){
       document.getElementById('app').classList.add('hidden');
       document.getElementById('gate').classList.remove('hidden');

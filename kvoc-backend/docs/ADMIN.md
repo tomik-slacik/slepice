@@ -39,8 +39,11 @@ bývalo v `app/routers/admin.py` a teď je vyřešené).
   mezi zastávkami, a kdo nemá uloženou polohu (nedá se zařadit).
 - **Uživatelé** — e-mail, počet slepiček, jestli má uloženou platební
   metodu, kdy se zaregistroval. `GET /admin/users` je stránkované
-  (`?limit=&offset=`, výchozí 100/stránka) — přehled zatím zobrazuje jen
-  první stránku, viz "Co (zatím) neumí" níž. Tlačítko **Detail** u
+  (`?limit=&offset=`) a `admin.html` to teď doopravdy používá — **◀
+  Předchozí**/**Další ▶** a nastavitelné "na stránku" (výchozí 20, ne
+  API's vlastní výchozí hodnota 100 - dvacet je čitelnější na jednu
+  obrazovku). Pozastavení/smazání zachová stránku, na které zrovna jsi,
+  nehodí tě to zpátky na začátek. Tlačítko **Detail** u
   každého uživatele (`GET /admin/users/{id}`) ukáže jeho slepičky i
   ostatní zvířata se jmény/farmou/částkou — a přímo odsud jde:
   - **pozastavit/obnovit** jednotlivou slepičku nebo zvíře
@@ -62,11 +65,11 @@ bývalo v `app/routers/admin.py` a teď je vyřešené).
 
 ## Co (zatím) neumí
 
-Přehled si zatím nenačítá druhou stránku uživatelů sám (API to podporuje,
-`admin.html` ještě ne). `PATCH /admin/hens/{id}`/`.../animals/{id}` už
-podporují stejná pole jako zákaznická verze (jméno, adresa, denní
-částka, pauza) — `admin.html`'s Detail panel z toho zatím ve svém UI
-nabízí jen pozastavit/obnovit, ne úpravu jména/adresy/částky natvrdo
-(chybí tam formulář, ne backend). Žádné hromadné akce (jedna
-slepička/účet najednou) — základ, co odpovídá reálnému provozu appky
-teď, ne kompletní back-office nástroj.
+`PATCH /admin/hens/{id}`/`.../animals/{id}` už podporují stejná pole
+jako zákaznická verze (jméno, adresa, denní částka, pauza) —
+`admin.html`'s Detail panel z toho zatím ve svém UI nabízí jen
+pozastavit/obnovit, ne úpravu jména/adresy/částky natvrdo (chybí tam
+formulář, ne backend). Žádné hromadné akce (jedna slepička/účet
+najednou), žádné hledání/filtrování uživatelů podle e-mailu — jen
+stránkování. Základ, co odpovídá reálnému provozu appky teď, ne
+kompletní back-office nástroj.
